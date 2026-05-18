@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Premium Cinematic Chess - Multiplayer Edition</title>
+  
+  <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;800&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+  
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+
+    body {
+      margin: 0; padding: 30px; 
+      background: linear-gradient(135deg, #131417 0%, #25272e 100%);
+      font-family: 'Inter', sans-serif;
+      min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    }
+
+    .container { 
+      width: 100%; max-width: 800px; margin: 0 auto; 
+      background: rgba(255, 255, 255, 0.03); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.08); padding: 40px; border-radius: 20px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+      position: relative;
+    }
+    
+    #status-banner { 
+      padding: 18px; margin-bottom: 20px; font-size: 1.6em; font-family: 'Cinzel', serif; font-weight: 800; 
+      text-align: center; border-radius: 10px; text-transform: uppercase; letter-spacing: 2px;
+      transition: all 0.4s ease; box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+    }
+
+    #connection-status {
+      text-align: center; font-size: 0.9em; color: #a0aabf; margin-bottom: 20px; font-weight: 600;
+    }
+    
+    #board-wrapper {
+      padding: 16px; background: linear-gradient(145deg, #1a1a1a, #2a2a2a);
+      border-radius: 12px; box-shadow: 0 20px 40px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.1);
+      width: 100%;
+    }
+
+    #board { width: 100%; display: block; }
+    
+    .white-1e1d7 { background: linear-gradient(135deg, #e3cda4 0%, #c8ab7e 100%) !important; color: #5c3a21 !important; }
+    .black-3c85d { background: linear-gradient(135deg, #7a4f32 0%, #4a2f1d 100%) !important; color: #e3cda4 !important; }
+
+    img[class^="piece-"] { filter: drop-shadow(0px 8px 6px rgba(0, 0, 0, 0.6)); transition: transform 0.15s ease-out; }
+    img[class^="piece-"]:active { transform: scale(1.12) translateY(-8px); filter: drop-shadow(0px 18px 12px rgba(0, 0, 0, 0.4)); }
+
+    .highlight-move { position: relative; }
+    .highlight-move::after {
+      content: ''; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      width: 28%; height: 28%; background-color: rgba(255, 255, 255, 0.7);
+      box-shadow: 0 0 12px rgba(255, 255, 255, 0.9); border-radius: 50%; pointer-events: none;
+    }
+
+    .highlight-capture { position: relative; }
+    .highlight-capture::after {
+      content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      border: 5px solid rgba(255, 70, 70, 0.9); box-shadow: inset 0 0 15px rgba(255, 70, 70, 0.5), 0 0 15px rgba(255, 70, 70, 0.5);
+      box-sizing: border-box; pointer-events: none;
+    }
+
+    .controls { margin-top: 30px; text-align: center; }
+    
+    button { 
+      padding: 16px 40px; font-family: 'Inter', sans-serif; font-size: 16px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 1.5px; cursor: pointer; border-radius: 50px; border: 1px solid rgba(255,255,255,0.1); 
+      background: linear-gradient(135deg, #3a3f47 0%, #24272c 100%); color: #fff; transition: all 0.3s ease; box-shadow: 0 6px 15px rgba(0,0,0,0.3); margin: 5px;
+    }
+    button:hover { background: linear-gradient(135deg, #4a505a 0%, #2c3036 100%); transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0,0,0,0.4); }
+    button:active { transform: translateY(1px); box-shadow: 0 2px 10px rgba(0,0,0,0.3); }
+    button:disabled { background: #555; color: #888; cursor: not-allowed; box-shadow: none; transform: none; }
+
+    /* OVERLAY MENU UI */
+    #menu-overlay {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(19, 20, 23, 0.95); border-radius: 20px; z-index: 1000;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
+    }
+    #menu-overlay h1 { font-family: 'Cinzel', serif; color: #e3cda4; font-size: 2.5em; margin-bottom: 40px; text-shadow: 0 5px 15px rgba(0,0,0,0.5); }
+    .menu-btn { display: block; width: 300px; margin-bottom: 15px; }
+    
+    .input-group { margin-top: 20px; display: none; flex-direction: column; align-items: center; }
+    input[type="text"] {
+      padding: 15px; width: 300px; border-radius: 8px; border: 1px solid #555; background: #2a2c33; color: #fff;
+      font-size: 16px; text-align: center; margin-bottom: 15px; font-family: 'Inter', sans-serif;
+    }
+    .id-display { font-size: 2em; color: #38ef7d; font-family: monospace; letter-spacing: 3px; margin: 15px 0; user-select: all; }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    
+    <div id="menu-overlay">
+      <h1>Chess Masters</h1>
+      <button class="menu-btn" id="btn-vs-ai">Play vs Computer</button>
+      <button class="menu-btn" id="btn-host">Host Online Game</button>
+      <button class="menu-btn" id="btn-join">Join Online Game</button>
+
+      <div id="host-ui" class="input-group">
+        <p style="color: #fff;">Share this ID with your opponent:</p>
+        <div class="id-display" id="display-game-id">Connecting...</div>
+        <p style="color: #a0aabf; font-size: 0.9em;">Waiting for opponent to connect...</p>
+        <button id="btn-cancel-host" style="margin-top: 20px; background: #cb2d3e;">Cancel</button>
+      </div>
+
+      <div id="join-ui" class="input-group">
+        <input type="text" id="input-game-id" placeholder="Enter Host's Game ID">
+        <button id="btn-connect" style="background: #11998e;">Connect & Play</button>
+        <button id="btn-cancel-join" style="margin-top: 10px; background: transparent; box-shadow: none;">Cancel</button>
+      </div>
+    </div>
+
+    <div id="status-banner">White to move</div>
+    <div id="connection-status">Mode: Select a game mode</div>
+    
+    <div id="board-wrapper">
+      <div id="board"></div>
+    </div>
+    
+    <div class="controls">
+      <button id="undoBtn">Undo Last Move</button>
+    </div>
+  </div>
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.2/chess.js"></script>
+  <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+
+  <script>
+    var board = null;
+    var game = new Chess();
+    var $statusBanner = $('#status-banner');
+    var $connStatus = $('#connection-status');
+    
+    // Game State Variables
+    var gameMode = null; // 'ai', 'host', 'guest'
+    var playerColor = 'w'; // 'w' or 'b'
+    var peer = null;
+    var conn = null;
+
+    // ==========================================
+    // UI VISUALS & HIGHLIGHTING
+    // ==========================================
+    function removeHighlights () {
+      $('#board .square-55d63').removeClass('highlight-move highlight-capture');
+    }
+
+    function showLegalMoves(square) {
+      var moves = game.moves({ square: square, verbose: true });
+      if (moves.length === 0) return;
+      for (var i = 0; i < moves.length; i++) {
+        var move = moves[i];
+        var $square = $('#board .square-' + move.to);
+        if (move.captured) $square.addClass('highlight-capture');
+        else $square.addClass('highlight-move');
+      }
+    }
+
+    function updateStatus () {
+      var statusText = '';
+      var moveColor = (game.turn() === 'w') ? 'White' : 'Black';
+
+      if (game.in_checkmate()) {
+        statusText = 'Checkmate: ' + moveColor + ' Wins';
+        $statusBanner.css({'background': 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)', 'color': '#fff'});
+      } else if (game.in_draw()) {
+        statusText = 'Draw';
+        $statusBanner.css({'background': 'linear-gradient(135deg, #f2c94c 0%, #f2994a 100%)', 'color': '#fff'});
+      } else {
+        statusText = moveColor + ' To Move';
+        if (moveColor === 'White') $statusBanner.css({'background': '#e3cda4', 'color': '#2a1a10'});
+        else $statusBanner.css({'background': '#2a1a10', 'color': '#e3cda4'});
+
+        if (game.in_check()) {
+          statusText = 'Check: ' + moveColor + ' To Move';
+          $statusBanner.css({'background': 'linear-gradient(135deg, #cb2d3e 0%, #ef473a 100%)', 'color': '#fff'});
+        }
+      }
+      $statusBanner.text(statusText);
+    }
+
+    // ==========================================
+    // CORE GAMEPLAY LOGIC
+    // ==========================================
+    function onDragStart (source, piece, position, orientation) {
+      if (game.game_over()) return false;
+      
+      // Strict rule: Only allow the player to pick up their own pieces!
+      if (piece.charAt(0) !== playerColor) return false;
+      
+      // Strict rule: Don't allow picking up pieces if it's not your turn
+      if (game.turn() !== playerColor) return false;
+
+      showLegalMoves(source);
+    }
+
+    function onDrop (source, target) {
+      removeHighlights();
+      var move = game.move({ from: source, to: target, promotion: 'q' });
+      
+      if (move === null) return 'snapback'; // Illegal move
+      
+      updateStatus();
+
+      // Trigger opponent logic based on mode
+      if (gameMode === 'ai') {
+        window.setTimeout(makeComputerMove, 250);
+      } else if (gameMode === 'host' || gameMode === 'guest') {
+        // Send move over the network
+        if (conn && conn.open) {
+          conn.send({ type: 'move', moveData: move });
+        }
+      }
+    }
+
+    function onSnapEnd () { board.position(game.fen()); }
+    function onMouseoverSquare (square, piece) {
+      if (piece && piece.charAt(0) === playerColor && game.turn() === playerColor) showLegalMoves(square);
+    }
+    function onMouseoutSquare () { removeHighlights(); }
+
+    var config = {
+      draggable: true,
+      position: 'start',
+      pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
+      onDragStart: onDragStart, onDrop: onDrop, onSnapEnd: onSnapEnd,
+      onMouseoverSquare: onMouseoverSquare, onMouseoutSquare: onMouseoutSquare
+    };
+
+    board = Chessboard('board', config);
+    updateStatus();
+    $(window).resize(board.resize);
+
+    // ==========================================
+    // AI OPPONENT LOGIC (Single Player)
+    // ==========================================
+    function makeComputerMove() {
+      if (game.game_over()) return;
+      
+      var possibleMoves = game.moves({ verbose: true });
+      if (possibleMoves.length === 0) return;
+
+      // Basic AI: Prioritize captures, otherwise pick random
+      var selectedMove = possibleMoves[Math.floor(Math.random() * possibleMoves.length)];
+      for (var i = 0; i < possibleMoves.length; i++) {
+        if (possibleMoves[i].captured) { selectedMove = possibleMoves[i]; break; }
+      }
+
+      game.move(selectedMove);
+      board.position(game.fen());
+      updateStatus();
+    }
+
+    // ==========================================
+    // NETWORK P2P LOGIC (Multiplayer)
+    // ==========================================
+    function generateShortID() {
+      // Generates a random 5-character ID for easy typing
+      return Math.random().toString(36).substring(2, 7).toUpperCase();
+    }
+
+    function initNetworkGame() {
+      // Hide buttons, show game
+      $('#menu-overlay').fadeOut();
+      $('#undoBtn').prop('disabled', true); // Disable undo in multiplayer to prevent desync
+      
+      // If guest, flip the board to Black's perspective
+      if (gameMode === 'guest') {
+        board.orientation('black');
+        playerColor = 'b';
+        $connStatus.text("Online: You are playing as Black.");
+      } else {
+        board.orientation('white');
+        playerColor = 'w';
+        $connStatus.text("Online: You are playing as White.");
+      }
+      
+      // Handle incoming network data
+      conn.on('data', function(data) {
+        if (data.type === 'move') {
+          game.move(data.moveData);
+          board.position(game.fen());
+          updateStatus();
+        }
+      });
+
+      conn.on('close', function() {
+        alert("Opponent disconnected!");
+        location.reload();
+      });
+    }
+
+    // ==========================================
+    // MENU & BUTTON EVENT LISTENERS
+    // ==========================================
+    
+    // 1. Play vs Computer
+    $('#btn-vs-ai').on('click', function() {
+      gameMode = 'ai';
+      playerColor = 'w'; // Player is White
+      board.orientation('white');
+      $connStatus.text("Single Player: Playing vs Computer");
+      $('#menu-overlay').fadeOut();
+    });
+
+    // 2. Host a Game
+    $('#btn-host').on('click', function() {
+      $('.menu-btn').hide();
+      $('#host-ui').css('display', 'flex');
+      
+      var gameID = generateShortID();
+      peer = new Peer(gameID); // Create peer with specific ID
+      
+      peer.on('open', function(id) {
+        $('#display-game-id').text(id);
+      });
+
+      // Wait for someone to connect to us
+      peer.on('connection', function(c) {
+        conn = c;
+        gameMode = 'host';
+        conn.on('open', function() {
+          initNetworkGame();
+        });
+      });
+    });
+
+    // 3. Join a Game
+    $('#btn-join').on('click', function() {
+      $('.menu-btn').hide();
+      $('#join-ui').css('display', 'flex');
+      peer = new Peer(); // Create guest peer
+    });
+
+    // 4. Connect Button (Guest)
+    $('#btn-connect').on('click', function() {
+      var targetId = $('#input-game-id').val().toUpperCase().trim();
+      if (!targetId) return;
+      
+      $(this).text("Connecting...");
+      conn = peer.connect(targetId);
+      
+      conn.on('open', function() {
+        gameMode = 'guest';
+        initNetworkGame();
+      });
+      
+      conn.on('error', function(err) {
+        alert("Could not connect. Check the ID and try again.");
+        $('#btn-connect').text("Connect & Play");
+      });
+    });
+
+    // Cancel buttons to go back to main menu
+    $('#btn-cancel-host, #btn-cancel-join').on('click', function() {
+      if (peer) { peer.destroy(); peer = null; }
+      $('#host-ui, #join-ui').hide();
+      $('.menu-btn').show();
+      $('#display-game-id').text("Connecting...");
+    });
+
+    // Single Player Undo Button
+    $('#undoBtn').on('click', function() {
+      if (gameMode === 'ai') {
+        game.undo(); // Undo AI move
+        game.undo(); // Undo Player move
+        board.position(game.fen());
+        removeHighlights();
+        updateStatus();
+      }
+    });
+
+  </script>
+</body>
+</html>
