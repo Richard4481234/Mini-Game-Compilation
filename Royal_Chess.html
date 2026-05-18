@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<!-- This meta tag makes the game look good on mobile phones -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>皇家战棋 - 网页版</title>
+<style>
+  body {
+    background-color: #f0f2f5;
+    margin: 0;
+    padding: 10px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+  }
+  #game-container {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    text-align: center;
+    background: #fdfdfd;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    max-width: 100%;
+    width: 600px;
+    box-sizing: border-box;
+  }
+  #status {
+    margin: 15px 0;
+    padding: 10px;
+    background: #eee;
+    border-radius: 5px;
+    font-weight: bold;
+    min-height: 24px;
+    font-size: 14px;
+    transition: all 0.3s;
+  }
+  
+  #main-layout {
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    gap: 15px;
+    margin: 15px auto;
+    flex-wrap: wrap; 
+  }
+
+  .stats-panel {
+    width: 90px;
+    background: #fafafa;
+    border: 2px solid #ccc;
+    border-radius: 8px;
+    padding: 10px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+  }
+  .stats-panel h3 {
+    margin: 0 0 10px 0;
+    font-size: 16px;
+    text-align: center;
+    border-bottom: 2px solid #ddd;
+    padding-bottom: 5px;
+  }
+  .stat-row {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    font-size: 14px;
+    font-weight: bold;
+  }
+  .R-panel { border-color: #ef9a9a; background: #fff0f0; color: #e53935; }
+  .R-panel h3 { border-bottom-color: #ef9a9a; }
+  .B-panel { border-color: #90caf9; background: #f0f8ff; color: #1e88e5; }
+  .B-panel h3 { border-bottom-color: #90caf9; }
+
+  #board {
+    display: grid;
+    /* Slightly smaller cells to fit mobile screens better */
+    grid-template-columns: repeat(6, 48px);
+    grid-gap: 5px;
+    perspective: 800px; 
+  }
+  .cell {
+    width: 48px;
+    height: 48px;
+    border: 2px solid #ccc;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    font-weight: bold;
+    cursor: pointer;
+    user-select: none;
+    background: #fff;
+    box-shadow: inset 0 -3px 0 rgba(0,0,0,0.1);
+    transition: transform 0.3s ease, opacity 0.4s ease, border-color 0.2s, box-shadow 0.2s, background-color 0.2s;
+    position: relative;
+    /* Prevent text selection on mobile tap */
+    -webkit-tap-highlight-color: transparent; 
+  }
+  .cell:hover { filter: brightness(0.9); }
+  .cell.hidden {
+    background: #78909c;
+    border-color: #546e7a;
+    color: transparent;
+    background-image: repeating-linear-gradient(45deg, transparent, transparent 8px, rgba(255,255,255,0.1) 8px, rgba(255,255,255,0.1) 16px);
+  }
+  .cell.hidden:after {
+    content: '?';
+    color: rgba(255,255,255,0.5);
+    font-size: 20px;
+  }
+  .cell.selected {
+    border-color: #ffb300 !important;
+    box-shadow: 0 0 12px #ffb300, inset 0 -3px 0 rgba(0,0,0,0.1) !important;
+    transform: scale(1.05);
+    z-index: 10;
+  }
+  
+  @keyframes pulse-green {
+    0% { box-shadow: 0 0 5px #4caf50, inset 0 -3px 0 rgba(0,0,0,0.1); }
+    50% { box-shadow: 0 0 15px #4caf50, inset 0 -3px 0 rgba(0,0,0,0.1); }
+    100% { box-shadow: 0 0 5px #4caf50, inset 0 -3px 0 rgba(0,0,0,0.1); }
+  }
+  .cell.valid-move {
+    border-color: #4caf50 !important;
+    animation: pulse-green 1.5s infinite;
+  }
+  .cell.valid-move.empty-cell { background-color: #e8f5e9; }
+
+  @keyframes battle-shake {
+    0% { transform: translate(1px, 1px) rotate(0deg) scale(1.1); background-color: #ff5252; }
+    20% { transform: translate(-3px, 0px) rotate(-5deg) scale(1.1); }
+    40% { transform: translate(1px, -1px) rotate(5deg) scale(1.1); background-color: #ff1744; }
+    60% { transform: translate(-3px, 1px) rotate(0deg) scale(1.1); }
+    80% { transform: translate(-1px, -1px) rotate(5deg) scale(1.1); background-color: #ff5252; }
+    100% { transform: translate(1px, 1px) rotate(0deg) scale(1); background-color: #fff; }
+  }
+  @keyframes pop-up {
+    0% { transform: scale(0.5); opacity: 1; }
+    50% { transform: scale(1.5); opacity: 1; }
+    100% { transform: scale(2.5); opacity: 0; }
+  }
+  .defending-anim {
+    animation: battle-shake 0.5s ease-in-out !important;
+    box-shadow: 0 0 25px red !important;
+    border-color: red !important;
+    z-index: 20;
+  }
+  .defending-anim::before {
+    content: '💥';
+    position: absolute;
+    font-size: 35px;
+    z-index: 100;
+    pointer-events: none;
+    animation: pop-up 0.5s ease-out forwards;
+  }
+
+  .cell.R { color: #e53935; border-color: #ef9a9a; }
+  .cell.B { color: #1e88e5; border-color: #90caf9; }
+  .btn {
+    padding: 10px 20px;
+    font-size: 16px;
+    background: #4caf50;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-weight: bold;
+    margin-top: 10px;
+    transition: background 0.2s;
+    width: 100%;
+    max-width: 200px;
+  }
+  .btn:hover { background: #43a047; }
+  .btn:disabled { background: #9e9e9e; cursor: not-allowed; }
+  
+  @keyframes dealCards {
+    0% { transform: translateY(-50px) scale(0.2) rotateY(-180deg); opacity: 0; }
+    100% { transform: translateY(0) scale(1) rotateY(0deg); opacity: 1; }
+  }
+</style>
+</head>
+<body>
+
+<div id="game-container">
+  <h2 style="margin-top:0; margin-bottom: 5px;">👑 皇家战棋 👑</h2>
+  <div style="font-size: 12px; color: #666; margin-bottom: 10px;">
+    王>将>骑>弓>卫>刺 (刺杀王) | 绿框提示移动
+  </div>
+  <div id="status">初始化中...</div>
+  
+  <div id="main-layout">
+    <div class="stats-panel R-panel">
+      <h3>🔴 红方</h3>
+      <div id="r-stats-content"></div>
+    </div>
+    
+    <div id="board"></div>
+    
+    <div class="stats-panel B-panel">
+      <h3>🔵 蓝方</h3>
+      <div id="b-stats-content"></div>
+    </div>
+  </div>
+
+  <button id="restart-btn" class="btn" onclick="initGame()">重新开始游戏</button>
+</div>
+
+<script>
+  const RANKS = { 6: '王', 5: '将', 4: '骑', 3: '弓', 2: '卫', 1: '刺' };
+  let board = [];
+  let turn = 1; 
+  let p1Color = null; 
+  let selectedIdx = -1;
+  let validMoves = []; 
+  let gameOver = false;
+  let isShuffling = false;
+  let isInitialDeal = true; 
+  let isFighting = false; 
+
+  function initGame() {
+    if (isShuffling || isFighting) return; 
+    
+    const boardDiv = document.getElementById('board');
+    const btn = document.getElementById('restart-btn');
+    
+    if (boardDiv.children.length > 0) {
+      isShuffling = true;
+      btn.disabled = true;
+      setStatus('🃏 正在收起棋盘...');
+      
+      const cells = Array.from(boardDiv.children);
+      cells.forEach(cell => {
+        const delay = Math.random() * 300; 
+        setTimeout(() => {
+          cell.style.transform = 'scale(0) rotateY(180deg)';
+          cell.style.opacity = '0';
+        }, delay);
+      });
+
+      setTimeout(() => {
+        generateLogic();
+        isShuffling = false;
+        btn.disabled = false;
+      }, 700); 
+    } else {
+      generateLogic();
+    }
+  }
+
+  function generateLogic() {
+    let pieces = [];
+    const ranksList = [6, 5, 4, 4, 3, 3, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1];
+    
+    ranksList.forEach(r => {
+      pieces.push({rank: r, color: 'R', name: RANKS[r], isHidden: true});
+      pieces.push({rank: r, color: 'B', name: RANKS[r], isHidden: true});
+    });
+    
+    for (let i = pieces.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [pieces[i], pieces[j]] = [pieces[j], pieces[i]];
+    }
+    
+    board = pieces;
+    turn = 1;
+    p1Color = null;
+    selectedIdx = -1;
+    validMoves = [];
+    gameOver = false;
+    isFighting = false;
+    document.getElementById('status').innerText = '游戏开始！请点击暗棋翻牌。';
+    
+    isInitialDeal = true;
+    render();
+    isInitialDeal = false; 
+  }
+
+  function getTurnColor() {
+    if (!p1Color) return null;
+    return turn === 1 ? p1Color : (p1Color === 'R' ? 'B' : 'R');
+  }
+
+  function updateStats() {
+    const counts = { 'R': {6:0, 5:0, 4:0, 3:0, 2:0, 1:0}, 'B': {6:0, 5:0, 4:0, 3:0, 2:0, 1:0} };
+    board.forEach(p => {
+      if (p !== null) {
+        counts[p.color][p.rank]++;
+      }
+    });
+    
+    const rankOrder = [6, 5, 4, 3, 2, 1];
+    const rHtml = rankOrder.map(r => `<div class="stat-row"><span>${RANKS[r]}</span><span>x ${counts['R'][r]}</span></div>`).join('');
+    const bHtml = rankOrder.map(r => `<div class="stat-row"><span>${RANKS[r]}</span><span>x ${counts['B'][r]}</span></div>`).join('');
+    
+    document.getElementById('r-stats-content').innerHTML = rHtml;
+    document.getElementById('b-stats-content').innerHTML = bHtml;
+  }
+
+  function calculateValidMoves(idx) {
+    const moves = [];
+    const r1 = Math.floor(idx / 6);
+    const c1 = idx % 6;
+    const attacker = board[idx];
+
+    const directions = [[-1, 0], [1, 0], [0, -1], [0, 1]]; 
+    for (let d of directions) {
+      const r2 = r1 + d[0];
+      const c2 = c1 + d[1];
+      
+      if (r2 >= 0 && r2 < 6 && c2 >= 0 && c2 < 6) {
+        const targetIdx = r2 * 6 + c2;
+        const defender = board[targetIdx];
+
+        if (defender === null) {
+          moves.push(targetIdx);
+        } else if (defender.isHidden) {
+          continue;
+        } else if (defender.color === attacker.color) {
+          continue;
+        } else {
+          const res = battle(attacker, defender);
+          if (res >= 0) { 
+            moves.push(targetIdx);
+          }
+        }
+      }
+    }
+    return moves;
+  }
+
+  function render() {
+    const boardDiv = document.getElementById('board');
+    boardDiv.innerHTML = '';
+    
+    board.forEach((p, i) => {
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      
+      if (p === null) {
+        cell.style.background = '#f0f0f0';
+        cell.style.borderColor = '#e0e0e0';
+        cell.style.boxShadow = 'none';
+        cell.classList.add('empty-cell'); 
+      } else if (p.isHidden) {
+        cell.classList.add('hidden');
+      } else {
+        cell.classList.add(p.color);
+        cell.innerText = p.name;
+      }
+      
+      if (i === selectedIdx) cell.classList.add('selected');
+      
+      if (validMoves.includes(i)) {
+        cell.classList.add('valid-move');
+      }
+      
+      if (isInitialDeal) {
+        cell.style.opacity = '0';
+        const delay = Math.random() * 0.4;
+        cell.style.animation = `dealCards 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) ${delay}s forwards`;
+      } else {
+        cell.style.opacity = '1';
+        cell.style.animation = cell.classList.contains('valid-move') ? '' : 'none'; 
+      }
+      
+      cell.onclick = () => handleClick(i);
+      boardDiv.appendChild(cell);
+    });
+    
+    updateStats();
+    
+    if (!isFighting) {
+        checkWin();
+    }
+  }
+
+  function handleClick(i) {
+    if (gameOver || isShuffling || isFighting) return;
+    const p = board[i];
+    const turnColor = getTurnColor();
+
+    if (p && p.isHidden) {
+      if (selectedIdx !== -1) {
+        selectedIdx = -1;
+        validMoves = [];
+        render();
+        return;
+      }
+      const cellElement = document.getElementById('board').children[i];
+      cellElement.style.transform = 'scale(1.1)';
+      setTimeout(() => { cellElement.style.transform = 'scale(1)'; }, 150);
+
+      p.isHidden = false;
+      if (!p1Color) p1Color = p.color; 
+      setStatus(`翻出了 ${p.color==='R'?'🔴红':'🔵蓝'}方 [${p.name}]。`);
+      turn = turn === 1 ? 2 : 1;
+      setTimeout(() => render(), 150);
+      return;
+    }
+
+    if (p && !p.isHidden && p.color === turnColor) {
+      if (selectedIdx === i) {
+        selectedIdx = -1; 
+        validMoves = [];
+        render();
+      } else {
+        selectedIdx = i;
+        validMoves = calculateValidMoves(i); 
+        if (validMoves.length > 0) {
+           setStatus(`已选中 [${p.name}]，请点击绿色格子移动。`);
+        } else {
+           setStatus(`已选中 [${p.name}]，但被包围，无路可走！`);
+        }
+        render();
+      }
+      return;
+    }
+
+    if (selectedIdx !== -1) {
+      if (!validMoves.includes(i)) {
+        setStatus('无效操作！点击空白处取消选中。');
+        selectedIdx = -1;
+        validMoves = [];
+        render();
+        return;
+      }
+
+      const attacker = board[selectedIdx];
+      const defender = board[i];
+
+      if (defender === null) {
+        board[i] = attacker;
+        board[selectedIdx] = null;
+        setStatus('移动成功。');
+        turn = turn === 1 ? 2 : 1;
+        selectedIdx = -1;
+        validMoves = [];
+        render();
+      } else {
+        isFighting = true; 
+        validMoves = []; 
+        const res = battle(attacker, defender);
+        
+        const boardDiv = document.getElementById('board');
+        const defenderCell = boardDiv.children[i];
+        
+        boardDiv.children[selectedIdx].classList.remove('selected');
+        defenderCell.classList.add('defending-anim');
+        setStatus(`⚔️ [${attacker.name}] 发起了攻击...`);
+
+        setTimeout(() => {
+            if (res === 1) {
+              board[i] = attacker;
+              board[selectedIdx] = null;
+              setStatus(`💥 战斗胜利！[${attacker.name}] 击杀了 [${defender.name}]。`);
+            } else if (res === 0) {
+              board[i] = null;
+              board[selectedIdx] = null;
+              setStatus(`💥 势均力敌！[${attacker.name}] 和 [${defender.name}] 同归于尽。`);
+            } 
+            turn = turn === 1 ? 2 : 1;
+            selectedIdx = -1;
+            isFighting = false; 
+            render();
+        }, 500);
+      }
+    }
+  }
+
+  function battle(a, d) {
+    if (a.rank === d.rank) return 0;
+    if (a.rank === 1 && d.rank === 6) return 1; 
+    if (a.rank === 6 && d.rank === 1) return -1;
+    return a.rank > d.rank ? 1 : -1;
+  }
+
+  function setStatus(msg) {
+    document.getElementById('status').innerText = msg;
+  }
+
+  function checkWin() {
+    if (gameOver) return;
+    const rAlive = board.some(p => p && p.color === 'R');
+    const bAlive = board.some(p => p && p.color === 'B');
+
+    if (!rAlive && !bAlive) { 
+      setStatus('游戏结束：同归于尽，平局！'); gameOver = true; 
+    } else if (!rAlive) { 
+      setStatus('🎉 游戏结束：🔵蓝方获胜！'); gameOver = true; 
+    } else if (!bAlive) { 
+      setStatus('🎉 游戏结束：🔴红方获胜！'); gameOver = true; 
+    } else {
+      const tc = getTurnColor();
+      if (tc) {
+        const currentText = document.getElementById('status').innerText;
+        const colorName = tc === 'R' ? '🔴红方' : '🔵蓝方';
+        if (!currentText.includes('当前回合') && !currentText.includes('发起了攻击')) {
+           setStatus(currentText + ` | 当前回合: ${colorName}`);
+        }
+      }
+    }
+  }
+
+  initGame();
+</script>
+</body>
+</html>
