@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Gomoku Online</title>
+<!-- Import PeerJS for Peer-to-Peer Networking -->
+<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+<style>
+    body { 
+        display: flex; 
+        flex-direction: column; 
+        align-items: center; 
+        background-color: #1e1e24; 
+        color: #f5f5f7;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+        margin: 0;
+        padding: 20px;
+    }
+    
+    .game-container {
+        display: flex;
+        flex-direction: row;
+        gap: 30px;
+        background-color: #2a2a35;
+        padding: 25px;
+        border-radius: 16px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        align-items: flex-start;
+    }
+
+    .board-wrapper { position: relative; }
+
+    canvas { 
+        background: radial-gradient(circle, #dfb17b 0%, #c7965c 100%);
+        border-radius: 8px;
+        box-shadow: inset 0 0 20px rgba(0,0,0,0.2), 0 4px 10px rgba(0,0,0,0.3);
+        cursor: none; 
+    }
+
+    .side-panel {
+        display: flex;
+        flex-direction: column;
+        width: 260px;
+        height: 480px;
+        gap: 15px;
+    }
+
+    .status-card, .network-card {
+        background-color: #343444;
+        padding: 15px;
+        border-radius: 10px;
+        text-align: center;
+        border: 1px solid #444456;
+    }
+
+    .network-card {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .network-card input {
+        padding: 8px;
+        border-radius: 4px;
+        border: 1px solid #555;
+        background: #1e1e24;
+        color: white;
+        text-align: center;
+    }
+
+    #turn-indicator {
+        font-size: 18px;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+    }
+
+    .stone-preview-icon {
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        display: inline-block;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+    }
+    
+    .stone-preview-icon.black { background: radial-gradient(circle at 30% 30%, #555 0%, #000 80%); }
+    .stone-preview-icon.white { background: radial-gradient(circle at 30% 30%, #fff 0%, #ccc 80%); border: 1px solid #aaa; }
+
+    .controls { display: flex; gap: 10px; }
+
+    button {
+        flex: 1;
+        padding: 10px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        background-color: #4f46e5;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        transition: background-color 0.2s;
+    }
+
+    button:hover { background-color: #6366f1; }
+    button:disabled { background-color: #374151; color: #9ca3af; cursor: not-allowed; }
+    
+    h1 { margin: 0 0 20px 0; font-weight: 700; text-shadow: 0 2px 4px rgba(0,0,0,0.5); }
+    
+    .highlight { color: #4ade80; font-family: monospace; font-size: 1.2em; user-select: all; cursor: copy;}
+</style>
+</head>
+<body>
+
+    <h1>五子棋 • GOMOKU ONLINE</h1>
+
+    <div class="game-container">
+        <div class="board-wrapper">
+            <canvas id="board" width="480" height="480"></canvas>
+        </div>
+        
+        <div class="side-panel">
+            <!-- Network Connection Panel -->
+            <div class="network-card" id="network-panel">
+                <div style="font-size: 14px; color: #a0a0b0;">Your Room ID:</div>
+                <div id="my-id" class="highlight">Connecting to server...</div>
+                <hr style="width: 100%; border-color: #444456; margin: 5px 0;">
+                <div style="font-size: 14px; color: #a0a0b0;">Join a Friend:</div>
+                <input type="text" id="friend-id" placeholder="Enter Friend's ID">
+                <button id="connect-btn" onclick="connectToPeer()">Connect & Play</button>
+                <div id="connection-status" style="font-size: 12px; color: #fbbf24; margin-top: 5px;">Waiting for opponent...</div>
+            </div>
+
+            <!-- Game Status Panel -->
+            <div class="status-card" id="status-panel" style="opacity: 0.5; pointer-events: none;">
+                <div id="role-text" style="font-size: 12px; color: #a0a0b0; margin-bottom: 8px;">Waiting to start...</div>
+                <div id="turn-indicator">
+                    <span id="player-icon" class="stone-preview-icon black"></span>
+                    <span id="status-text">Black's Turn</span>
+                </div>
+            </div>
+            
+            <div class="controls">
+                <button onclick="resetLocalGame()">Local Practice Reset</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- GAME LOGIC ---
+        const canvas = document.getElementById('board');
+        const ctx = canvas.getContext('2d');
+        const statusText = document.getElementById('status-text');
+        const playerIcon = document.getElementById('player-icon');
+        const roleText = document.getElementById('role-text');
+        const statusPanel = document.getElementById('status-panel');
+        const connectionStatus = document.getElementById('connection-status');
+        
+        const size = 15;
+        const padding = 24; 
+        const boardWidth = canvas.width - (padding * 2);
+        const cellSize = boardWidth / (size - 1);
+        
+        let board = [];
+        let moveHistory = []; 
+        let currentPlayer = 1; // 1 = Black, 2 = White
+        let gameOver = false;
+        let hoverPos = null;
+        let winLine = null;
+
+        // --- NETWORK LOGIC ---
+        let peer = null;
+        let conn = null;
+        let myRole = 0; // 0 = Local, 1 = Host(Black), 2 = Guest(White)
+
+        function initNetwork() {
+            peer = new Peer(); // Connect to public PeerJS server
+            
+            peer.on('open', (id) => {
+                document.getElementById('my-id').innerText = id;
+            });
+
+            // When someone connects TO us (We are Host)
+            peer.on('connection', (connection) => {
+                conn = connection;
+                setupConnection();
+                startGame(1); // Host is Black
+                conn.send({ type: 'start', role: 2 }); // Tell guest they are White
+            });
+        }
+
+        function connectToPeer() {
+            const friendId = document.getElementById('friend-id').value.trim();
+            if (!friendId) return;
+            
+            connectionStatus.innerText = "Connecting...";
+            conn = peer.connect(friendId);
+            setupConnection();
+        }
+
+        function setupConnection() {
+            conn.on('open', () => {
+                connectionStatus.innerText = "Connected!";
+                connectionStatus.style.color = "#4ade80";
+                document.getElementById('network-panel').style.opacity = '0.5';
+                document.getElementById('network-panel').style.pointerEvents = 'none';
+            });
+
+            conn.on('data', (data) => {
+                if (data.type === 'start') {
+                    startGame(data.role);
+                } else if (data.type === 'move') {
+                    processMove(data.r, data.c, false); // False = don't bounce back to network
+                } else if (data.type === 'reset') {
+                    initBoard();
+                    updateUI();
+                    draw();
+                }
+            });
+
+            conn.on('close', () => {
+                alert("Opponent disconnected.");
+                location.reload();
+            });
+        }
+
+        function startGame(role) {
+            myRole = role;
+            statusPanel.style.opacity = '1';
+            roleText.innerText = role === 1 ? "You are Playing: BLACK" : "You are Playing: WHITE";
+            roleText.style.color = role === 1 ? "#fff" : "#ccc";
+            initBoard();
+        }
+
+        // --- CORE GAMEPLAY ---
+        function initBoard() {
+            board = Array(size).fill(null).map(() => Array(size).fill(0));
+            moveHistory = [];
+            currentPlayer = 1;
+            gameOver = false;
+            winLine = null;
+            hoverPos = null;
+            updateUI();
+            draw();
+        }
+
+        function processMove(r, c, sendToNetwork) {
+            if (board[r][c] !== 0 || gameOver) return;
+
+            board[r][c] = currentPlayer;
+            moveHistory.push({ r, c, player: currentPlayer });
+
+            if (sendToNetwork && conn && conn.open) {
+                conn.send({ type: 'move', r: r, c: c });
+            }
+
+            const winDetails = checkWin(r, c, currentPlayer);
+            if (winDetails) {
+                gameOver = true;
+                winLine = winDetails;
+                statusText.innerText = (currentPlayer === 1 ? "Black" : "White") + " Wins! 🎉";
+            } else {
+                currentPlayer = currentPlayer === 1 ? 2 : 1;
+                updateUI();
+            }
+            draw();
+        }
+
+        canvas.addEventListener('click', (e) => {
+            if (gameOver) return;
+            
+            // If playing multiplayer, prevent moving if it's not your turn
+            if (myRole !== 0 && currentPlayer !== myRole) {
+                return; // Not your turn!
+            }
+
+            const coords = getGridCoords(e);
+            if (!coords) return;
+            processMove(coords.r, coords.c, true);
+        });
+
+        // --- RENDERING & UTILS (Same as previous beautiful version) ---
+        function updateUI() {
+            if (gameOver) return;
+            if (currentPlayer === 1) {
+                statusText.innerText = "Black's Turn";
+                playerIcon.className = "stone-preview-icon black";
+            } else {
+                statusText.innerText = "White's Turn";
+                playerIcon.className = "stone-preview-icon white";
+            }
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.strokeStyle = 'rgba(40, 30, 15, 0.6)';
+            ctx.lineWidth = 1.2;
+            
+            for (let i = 0; i < size; i++) {
+                let offset = padding + i * cellSize;
+                ctx.beginPath(); ctx.moveTo(padding, offset); ctx.lineTo(canvas.width - padding, offset); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(offset, padding); ctx.lineTo(offset, canvas.height - padding); ctx.stroke();
+            }
+
+            const starPoints = [3, 7, 11];
+            ctx.fillStyle = 'rgba(40, 30, 15, 0.8)';
+            for (let r of starPoints) {
+                for (let c of starPoints) {
+                    if ((r === 7 && c === 7) || (r !== 7 && c !== 7)) {
+                        ctx.beginPath(); ctx.arc(padding + c * cellSize, padding + r * cellSize, 3.5, 0, 2 * Math.PI); ctx.fill();
+                    }
+                }
+            }
+
+            for (let r = 0; r < size; r++) {
+                for (let c = 0; c < size; c++) {
+                    if (board[r][c] !== 0) drawStone(r, c, board[r][c], 1.0);
+                }
+            }
+
+            if (moveHistory.length > 0 && !winLine) {
+                const lastMove = moveHistory[moveHistory.length - 1];
+                ctx.beginPath();
+                ctx.arc(padding + lastMove.c * cellSize, padding + lastMove.r * cellSize, cellSize * 0.15, 0, 2 * Math.PI);
+                ctx.strokeStyle = lastMove.player === 1 ? '#fff' : '#000';
+                ctx.lineWidth = 2; ctx.stroke();
+            }
+
+            // Only show hover if playing locally OR if it's your turn online
+            if (!gameOver && hoverPos && board[hoverPos.r][hoverPos.c] === 0) {
+                if (myRole === 0 || currentPlayer === myRole) {
+                    drawStone(hoverPos.r, hoverPos.c, currentPlayer, 0.45);
+                }
+            }
+
+            if (winLine) {
+                ctx.beginPath();
+                ctx.moveTo(padding + winLine.start.c * cellSize, padding + winLine.start.r * cellSize);
+                ctx.lineTo(padding + winLine.end.c * cellSize, padding + winLine.end.r * cellSize);
+                ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 5; ctx.lineCap = 'round';
+                ctx.shadowColor = '#f59e0b'; ctx.shadowBlur = 12; ctx.stroke(); ctx.shadowBlur = 0; 
+            }
+        }
+
+        function drawStone(r, c, player, opacity) {
+            const x = padding + c * cellSize;
+            const y = padding + r * cellSize;
+            const radius = cellSize * 0.42;
+
+            ctx.save();
+            ctx.globalAlpha = opacity;
+
+            ctx.beginPath(); ctx.arc(x + 2, y + 2, radius, 0, 2 * Math.PI);
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.3)'; ctx.fill();
+
+            const grad = ctx.createRadialGradient(x - radius*0.15, y - radius*0.15, radius * 0.1, x, y, radius);
+            if (player === 1) { 
+                grad.addColorStop(0, '#666'); grad.addColorStop(0.2, '#222'); grad.addColorStop(1, '#050505');
+            } else { 
+                grad.addColorStop(0, '#ffffff'); grad.addColorStop(0.6, '#ededed'); grad.addColorStop(1, '#b5b5b5');
+            }
+            ctx.fillStyle = grad;
+            ctx.beginPath(); ctx.arc(x, y, radius, 0, 2 * Math.PI); ctx.fill();
+            if (player !== 1) { ctx.strokeStyle = 'rgba(0,0,0,0.15)'; ctx.lineWidth = 1; ctx.stroke(); }
+            ctx.restore();
+        }
+
+        function getGridCoords(e) {
+            const rect = canvas.getBoundingClientRect();
+            const c = Math.round((e.clientX - rect.left - padding) / cellSize);
+            const r = Math.round((e.clientY - rect.top - padding) / cellSize);
+            if (r >= 0 && r < size && c >= 0 && c < size) return { r, c };
+            return null;
+        }
+
+        canvas.addEventListener('mousemove', (e) => { hoverPos = getGridCoords(e); draw(); });
+        canvas.addEventListener('mouseleave', () => { hoverPos = null; draw(); });
+
+        function checkWin(r, c, player) {
+            const dirs = [{ dr: 0, dc: 1 }, { dr: 1, dc: 0 }, { dr: 1, dc: 1 }, { dr: 1, dc: -1 }];
+            for (let { dr, dc } of dirs) {
+                let matches = [{ r, c }];
+                let nr = r + dr, nc = c + dc;
+                while (nr >= 0 && nr < size && nc >= 0 && nc < size && board[nr][nc] === player) { matches.push({ r: nr, c: nc }); nr += dr; nc += dc; }
+                nr = r - dr; nc = c - dc;
+                while (nr >= 0 && nr < size && nc >= 0 && nc < size && board[nr][nc] === player) { matches.push({ r: nr, c: nc }); nr -= dr; nc -= dc; }
+                if (matches.length >= 5) {
+                    matches.sort((a, b) => a.c - b.c || a.r - b.r);
+                    return { start: matches[0], end: matches[matches.length - 1] };
+                }
+            }
+            return null;
+        }
+
+        function resetLocalGame() {
+            if (conn && conn.open) conn.send({ type: 'reset' });
+            initBoard();
+        }
+
+        // Start
+        initBoard();
+        initNetwork();
+    </script>
+</body>
+</html>
