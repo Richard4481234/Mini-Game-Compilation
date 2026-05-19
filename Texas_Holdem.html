@@ -1,0 +1,1016 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VIP Multiplayer Texas Hold'em</title>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        body {
+            background-color: #0f141e; color: white; display: flex; justify-content: center;
+            align-items: center; min-height: 100vh; margin: 0;
+            font-family: 'Segoe UI', system-ui, sans-serif; overflow-x: hidden;
+        }
+        .hidden { display: none !important; }
+        #menu-view, #lobby-view, #game-view {
+            width: 100%; max-width: 960px; padding: 20px; box-sizing: border-box; text-align: center;
+        }
+        h1 { color: #ffd32a; font-size: 40px; text-shadow: 0 4px 10px rgba(0,0,0,0.5); margin-bottom: 10px; }
+        .input-box {
+            padding: 12px; font-size: 18px; border-radius: 8px; border: 2px solid #57606f;
+            background: #2f3640; color: white; text-align: center; margin-bottom: 15px;
+        }
+        .btn {
+            border: none; padding: 15px 30px; margin: 10px; border-radius: 30px; font-size: 16px;
+            font-weight: 700; color: white; cursor: pointer; text-transform: uppercase;
+            box-shadow: 0 6px 12px rgba(0,0,0,0.3); transition: 0.2s;
+        }
+        .btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 8px 15px rgba(0,0,0,0.4); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-primary { background: linear-gradient(to bottom, #5352ed, #3742fa); }
+        .btn-success { background: linear-gradient(to bottom, #2ed573, #7bed9f); color: #1f3625; }
+        .btn-danger  { background: linear-gradient(to bottom, #ff4757, #ff6b81); }
+        .btn-warn    { background: linear-gradient(to bottom, #ffa502, #ff7f50); color: #1a0a00; }
+        .player-list { background: rgba(0,0,0,0.3); border-radius: 15px; padding: 20px; margin: 20px 0; text-align: left; }
+        .lobby-player {
+            display: flex; justify-content: space-between; padding: 10px;
+            border-bottom: 1px solid rgba(255,255,255,0.1); font-size: 18px;
+        }
+        .status-ready   { color: #7bed9f; font-weight: bold; }
+        .status-waiting { color: #ff6b81; }
+        .vip-table {
+            background: radial-gradient(ellipse at center, #0a6631 0%, #032b13 100%);
+            padding: 40px; border-radius: 120px;
+            box-shadow: inset 0 0 0 20px #2d1a11, inset 0 0 20px 20px rgba(0,0,0,0.7), 0 25px 50px rgba(0,0,0,0.6);
+            display: flex; flex-direction: column; align-items: center;
+        }
+        .pot-area {
+            margin: 20px 0; background: rgba(0,0,0,0.3);
+            padding: 15px 30px; border-radius: 20px; text-align: center;
+        }
+        .pot-title { font-size: 24px; color: #ffd32a; font-weight: 900; margin-bottom: 6px; }
+        .side-pots-area { font-size: 13px; margin-bottom: 8px; display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+        .side-pot-badge {
+            background: rgba(255,165,0,0.15); border: 1px solid #ffa502;
+            border-radius: 10px; padding: 3px 10px; color: #ffa502; font-weight: bold;
+        }
+        .card-row { display: flex; justify-content: center; gap: 8px; min-height: 80px; }
+        .card {
+            width: 55px; height: 80px; border-radius: 6px; display: flex; flex-direction: column;
+            justify-content: center; align-items: center; position: relative;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.5); user-select: none; background: white;
+        }
+        .card-hidden {
+            background: repeating-linear-gradient(45deg, #8b0000, #8b0000 5px, #600000 5px, #600000 10px);
+            border: 2px solid white;
+        }
+        .card-empty { border: 2px dashed rgba(255,255,255,0.2); background: rgba(0,0,0,0.05); box-shadow: none; }
+        .opponents-container { display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; width: 100%; margin-bottom: 20px; }
+        .opponent { background: rgba(0,0,0,0.4); padding: 10px; border-radius: 15px; text-align: center; border: 2px solid transparent; }
+        .opponent.active-turn  { border-color: #ffd32a; box-shadow: 0 0 15px rgba(255,211,42,0.5); }
+        .opponent.folded-player { opacity: 0.4; }
+        .hero-container { margin-top: 20px; display: flex; flex-direction: column; align-items: center; }
+        .player-tag {
+            background: #2f3640; padding: 5px 15px; border-radius: 15px;
+            font-weight: bold; margin-bottom: 5px; border: 1px solid #57606f;
+        }
+        .active-turn { border-color: #ffd32a !important; box-shadow: 0 0 15px rgba(255,211,42,0.5) !important; }
+        .controls-container {
+            margin-top: 20px; padding-top: 20px;
+            border-top: 1px dashed rgba(255,255,255,0.2); width: 100%;
+        }
+        .status-msg {
+            margin-top: 15px; padding: 10px; background: rgba(0,255,100,0.1);
+            border-radius: 8px; color: #7bed9f; font-weight: bold; min-height: 20px;
+        }
+        .badge {
+            display: inline-block; font-size: 11px; padding: 2px 7px;
+            border-radius: 10px; margin-left: 4px; font-weight: bold; vertical-align: middle;
+        }
+        .badge-dealer { background: #ffd32a; color: #1a1000; }
+        .badge-sb     { background: #3498db; color: white; }
+        .badge-bb     { background: #e67e22; color: white; }
+        .badge-allin  { background: #ff4757; color: white; }
+        .bet-display       { font-size: 12px; color: #ffd32a; margin-top: 3px; }
+        .hand-rank-display { font-size: 13px; color: #a29bfe; margin-top: 4px; font-style: italic; }
+        .raise-controls { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: center; }
+        input[type=range] { width: 130px; accent-color: #ffd32a; }
+
+        @keyframes dealCard {
+            0%   { opacity: 0; transform: translateY(-200px) scale(0.4) rotate(-15deg); }
+            100% { opacity: 1; transform: translateY(0)      scale(1)   rotate(0deg);  }
+        }
+        .anim-deal { animation: dealCard 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) both; }
+
+        @keyframes foldCard {
+            0%   { opacity: 1;   transform: translateY(0)    rotate(0deg);  }
+            100% { opacity: 0.2; transform: translateY(40px) rotate(12deg); filter: grayscale(100%); }
+        }
+        .anim-fold { animation: foldCard 0.5s ease-in both; }
+
+        @keyframes winPulse {
+            0%, 100% { box-shadow: 0 0 8px  #ffd32a; }
+            50%       { box-shadow: 0 0 24px 8px #ffd32a; }
+        }
+        .winner-glow { animation: winPulse 0.9s ease-in-out 3; }
+
+        /* Spectator */
+        .badge-spectator { background: #636e72; color: #dfe6e9; }
+        .spectator-player { opacity: 0.5; border: 2px dashed #636e72 !important; }
+        .spectator-banner {
+            background: rgba(99,110,114,0.25); border: 1px solid #636e72;
+            border-radius: 12px; padding: 12px 24px; color: #b2bec3;
+            font-size: 15px; font-weight: bold; letter-spacing: 1px;
+        }
+        .spectator-section {
+            margin-top: 18px; border-top: 1px dashed rgba(255,255,255,0.1);
+            padding-top: 14px; width: 100%;
+        }
+        .spectator-list-title {
+            font-size: 12px; color: #636e72; text-transform: uppercase;
+            letter-spacing: 2px; margin-bottom: 8px;
+        }
+        .spectator-chips { color: #636e72; }
+    </style>
+</head>
+<body>
+
+<!-- MAIN MENU -->
+<div id="menu-view">
+    <h1>VIP POKER NETWORK</h1>
+    <p>Your Player Name:</p>
+    <input type="text" id="player-name" class="input-box" value="Player" maxlength="10"><br>
+    <button class="btn btn-primary" onclick="hostGame()">Host Game</button>
+    <hr style="border:1px solid #2f3640; margin:30px 0;">
+    <p>Have a room code?</p>
+    <input type="text" id="join-code" class="input-box" placeholder="Enter Room ID"><br>
+    <button class="btn btn-success" onclick="joinGame()">Join Game</button>
+    <div id="menu-error" style="color:#ff6b81; margin-top:10px;"></div>
+</div>
+
+<!-- LOBBY -->
+<div id="lobby-view" class="hidden">
+    <h1>ROOM LOBBY</h1>
+    <h2 id="lobby-code-display" style="color:#ffd32a; letter-spacing:2px;"></h2>
+    <div id="host-controls" class="hidden" style="margin-bottom:20px;">
+        <label>Max Players (2-8): </label>
+        <input type="number" id="max-players" value="8" min="2" max="8" class="input-box" style="width:60px;padding:5px;">
+    </div>
+    <div class="player-list" id="lobby-players"></div>
+    <button id="btn-ready" class="btn btn-success" onclick="toggleReady()">I'm Ready</button>
+    <button id="btn-start" class="btn btn-primary hidden" onclick="startGame()" disabled>Start Game</button>
+</div>
+
+<!-- GAME BOARD -->
+<div id="game-view" class="hidden">
+    <div class="vip-table">
+        <div class="opponents-container" id="opponents-area"></div>
+        <div class="pot-area">
+            <div class="pot-title" id="pot-display">POT: $0</div>
+            <div class="side-pots-area hidden" id="side-pots-area"></div>
+            <div class="card-row" id="board-area"></div>
+            <div id="action-log" class="status-msg">Waiting for game to start...</div>
+        </div>
+        <div class="hero-container" id="hero-area"></div>
+        <div class="controls-container" id="game-controls"></div>
+        <div class="spectator-section hidden" id="spectator-section">
+            <div class="spectator-list-title">👁 Spectating</div>
+            <div id="spectator-list"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+// =========================================================================
+// GLOBALS
+// =========================================================================
+let peer           = null;
+let connections    = [];       // host only: open DataConnections
+let hostConnection = null;     // client only
+let isHost         = false;
+let myId           = '';
+let myName         = '';
+
+// PERF: single tracked timer ID — prevents runaway setTimeout chains
+let handTimerId = null;
+
+// =========================================================================
+// GAME STATE
+// =========================================================================
+let gameState = {
+    status:           'lobby',
+    maxPlayers:       8,
+    pot:              0,         // total of all chips in play (main + side)
+    sidePots:         [],        // [{amount, eligibleIds:[]}] — computed after every action
+    stage:            0,         // 0=pre-flop 1=flop 2=turn 3=river
+    turnsTaken:       0,
+    currentBet:       0,
+    smallBlind:       10,
+    bigBlind:         20,
+    dealerIndex:      0,
+    board:            [],
+    players:          [],
+    currentTurnIndex: 0,
+    lastMessage:      'Welcome to the table.'
+};
+
+const SUITS = ['s','c','h','d'];
+const RANKS = ['2','3','4','5','6','7','8','9','T','J','Q','K','A'];
+let deck = [];
+
+// =========================================================================
+// HAND EVALUATION
+// =========================================================================
+const RANK_VAL = { 2:2,3:3,4:4,5:5,6:6,7:7,8:8,9:9,T:10,J:11,Q:12,K:13,A:14 };
+
+function parseCard(c) { return { rank: RANK_VAL[c[0]], suit: c[1] }; }
+
+// Best 5-card hand out of 7 (21 combos, no recursion)
+function evaluateHand(holeCards, boardCards) {
+    const all = [...holeCards, ...boardCards].map(parseCard);
+    let best = null;
+    for (let i = 0; i < all.length - 1; i++) {
+        for (let j = i + 1; j < all.length; j++) {
+            const hand = all.filter((_, k) => k !== i && k !== j);
+            const s = score5(hand);
+            if (!best || compareScore(s, best) > 0) best = s;
+        }
+    }
+    return best;
+}
+
+function score5(cards) {
+    const ranks   = cards.map(c => c.rank).sort((a, b) => b - a);
+    const suits   = cards.map(c => c.suit);
+    const isFlush = suits.every(s => s === suits[0]);
+    const cnt     = {};
+    ranks.forEach(r => cnt[r] = (cnt[r] || 0) + 1);
+    const counts = Object.values(cnt).sort((a, b) => b - a);
+    const uniq   = Object.keys(cnt).map(Number).sort((a, b) => b - a);
+
+    // Straight (includes A-low wheel A-2-3-4-5)
+    let isStraight = false, straightHigh = 0;
+    if (uniq.length === 5) {
+        if (uniq[0] - uniq[4] === 4) {
+            isStraight = true; straightHigh = uniq[0];
+        } else if (uniq[0] === 14 && uniq[1] === 5 && uniq[4] === 2) {
+            isStraight = true; straightHigh = 5;
+        }
+    }
+
+    const isSF = isFlush && isStraight;
+    if (isSF && straightHigh === 14)      return { rank:8, tb:[14] };
+    if (isSF)                             return { rank:7, tb:[straightHigh] };
+    if (counts[0] === 4)                  return { rank:6, tb:byCount(cnt) };
+    if (counts[0] === 3 && counts[1]===2) return { rank:5, tb:byCount(cnt) };
+    if (isFlush)                          return { rank:4, tb:ranks };
+    if (isStraight)                       return { rank:3, tb:[straightHigh] };
+    if (counts[0] === 3)                  return { rank:2, tb:byCount(cnt) };
+    if (counts[0] === 2)                  return { rank:1, tb:byCount(cnt) };
+    return                                       { rank:0, tb:ranks };
+}
+
+function byCount(cnt) {
+    return Object.entries(cnt)
+        .sort(([ra,ca],[rb,cb]) => cb - ca || Number(rb) - Number(ra))
+        .map(([r]) => Number(r));
+}
+
+function compareScore(a, b) {
+    if (a.rank !== b.rank) return a.rank - b.rank;
+    for (let i = 0; i < Math.max(a.tb.length, b.tb.length); i++) {
+        const d = (a.tb[i] || 0) - (b.tb[i] || 0);
+        if (d) return d;
+    }
+    return 0;
+}
+
+const HAND_NAMES = [
+    'High Card','Pair / Two Pair','Three of a Kind','Straight',
+    'Flush','Full House','Four of a Kind','Straight Flush','Royal Flush'
+];
+function getHandName(s) { return HAND_NAMES[s.rank] || 'Unknown'; }
+
+// =========================================================================
+// UTILS
+// =========================================================================
+function showView(id) {
+    ['menu-view','lobby-view','game-view'].forEach(v =>
+        document.getElementById(v).classList.add('hidden'));
+    document.getElementById(id).classList.remove('hidden');
+}
+
+function generateId() { return Math.random().toString(36).substr(2,6).toUpperCase(); }
+
+function getCardHTML(card, hidden=false, animClass='', delay=0) {
+    const style = delay ? `animation-delay:${delay}s;` : '';
+    if (hidden) return `<div class="card card-hidden ${animClass}" style="${style}"></div>`;
+    if (!card)  return `<div class="card card-empty"></div>`;
+    const r = card[0] === 'T' ? '10' : card[0];
+    const s = { s:'♠', c:'♣', h:'♥', d:'♦' }[card[1]];
+    const col = (card[1]==='h' || card[1]==='d') ? '#e84118' : '#1e272e';
+    return `<div class="card ${animClass}" style="color:${col};${style}">
+        <div style="position:absolute;top:2px;left:4px;font-size:14px;font-weight:bold;">${r}</div>
+        <div style="font-size:28px;">${s}</div>
+    </div>`;
+}
+
+// PERF: hard-capped loop — can never spin infinitely regardless of game state.
+// Returns -1 if no eligible (non-folded, non-all-in, non-spectator) player exists.
+function nextActiveIndex(fromIdx) {
+    const n = gameState.players.length;
+    if (n === 0) return -1;
+    let idx = (fromIdx + 1) % n;
+    for (let guard = 0; guard < n; guard++) {
+        const p = gameState.players[idx];
+        if (!p.folded && !p.isAllIn && !p.isSpectator) return idx;
+        idx = (idx + 1) % n;
+    }
+    return -1;
+}
+
+// PERF: single tracked timer — clears any pending timer before scheduling a new one
+function scheduleNewHand(delayMs) {
+    if (handTimerId !== null) { clearTimeout(handTimerId); handTimerId = null; }
+    handTimerId = setTimeout(() => {
+        handTimerId = null;
+        startNewHand();
+    }, delayMs);
+}
+
+// =========================================================================
+// SIDE POT ENGINE
+// =========================================================================
+// Called after every chip movement. Recalculates side pots from scratch
+// using each player's totalCommitted for this hand.
+//
+// Algorithm (standard poker):
+//   Sort unique commitment levels. For each level, create a pot worth
+//   (level - prevLevel) × number of players who committed at least that much.
+//   Only players who contributed to a pot are eligible to win it.
+//
+function computeSidePots() {
+    const players = gameState.players.filter(p => !p.isSpectator);
+
+    // Collect (id, committed, folded) tuples — folded players contributed but can't win
+    const contribs = players.map(p => ({
+        id:        p.id,
+        committed: p.totalCommitted,
+        folded:    p.folded
+    }));
+
+    // Unique commitment levels from all-in players, sorted ascending
+    const allInLevels = [...new Set(
+        players.filter(p => p.isAllIn).map(p => p.totalCommitted)
+    )].sort((a, b) => a - b);
+
+    if (allInLevels.length === 0) {
+        // No all-ins — single main pot, everyone non-folded is eligible
+        const total = contribs.reduce((s, c) => s + c.committed, 0);
+        gameState.pot      = total;
+        gameState.sidePots = [];
+        return;
+    }
+
+    const pots  = [];
+    let prevCap = 0;
+
+    // Build a pot for each all-in level, then one final pot for the remainder
+    const levels = [...allInLevels, Infinity];
+    for (const cap of levels) {
+        const potAmount = contribs.reduce((s, c) => {
+            const contrib = Math.min(c.committed, cap) - Math.min(c.committed, prevCap);
+            return s + Math.max(contrib, 0);
+        }, 0);
+
+        if (potAmount <= 0) continue;
+
+        // Eligible = contributed at least up to this cap AND not folded
+        const eligibleIds = contribs
+            .filter(c => c.committed >= cap || (cap === Infinity && c.committed > prevCap))
+            .filter(c => !c.folded)
+            .map(c => c.id);
+
+        // If nobody eligible (e.g. everyone folded at this level), chips go to
+        // the last non-folded player who put money in — handled at showdown
+        if (eligibleIds.length > 0 || cap !== Infinity) {
+            pots.push({ amount: potAmount, eligibleIds });
+        }
+
+        prevCap = cap === Infinity ? prevCap : cap;
+    }
+
+    // Total pot = sum of all sub-pots
+    gameState.pot      = pots.reduce((s, p) => s + p.amount, 0);
+    gameState.sidePots = pots.length > 1 ? pots : [];  // only expose when there are splits
+}
+
+// =========================================================================
+// HOST LOGIC
+// =========================================================================
+function hostGame() {
+    myName = document.getElementById('player-name').value.trim() || 'Host';
+    isHost = true;
+    const roomCode = 'VIP-' + generateId();
+    document.getElementById('menu-error').innerText = 'Connecting to network...';
+
+    peer = new Peer(roomCode);
+    peer.on('open', id => {
+        myId = id;
+        gameState.players.push(makePlayer(myId, myName, true));
+        document.getElementById('lobby-code-display').innerText = 'Room ID: ' + roomCode;
+        document.getElementById('host-controls').classList.remove('hidden');
+        document.getElementById('btn-start').classList.remove('hidden');
+        showView('lobby-view');
+        renderLobby();
+    });
+    peer.on('connection', conn => {
+        conn.on('data',  data => handleClientData(conn, data));
+        conn.on('close', ()   => removePlayer(conn.peer));
+    });
+    peer.on('error', err => {
+        document.getElementById('menu-error').innerText = 'Connection error: ' + err.type;
+    });
+}
+
+function makePlayer(id, name, ready=false) {
+    return { id, name, ready, chips:1000, cards:[], folded:false,
+             currentBet:0, totalCommitted:0,   // totalCommitted = chips put in THIS hand across all streets
+             isAllIn:false, handName:null, isWinner:false,
+             isSpectator:false };
+}
+
+function removePlayer(peerId) {
+    const idx = gameState.players.findIndex(p => p.id === peerId);
+    if (idx !== -1) {
+        if (gameState.status === 'playing') {
+            gameState.players[idx].folded = true;
+            gameState.lastMessage = `${gameState.players[idx].name} disconnected (folded).`;
+            if (gameState.currentTurnIndex === idx) {
+                gameState.players.splice(idx, 1);
+                connections = connections.filter(c => c.peer !== peerId);
+                if (gameState.currentTurnIndex >= gameState.players.length)
+                    gameState.currentTurnIndex = 0;
+                nextTurn();
+                return;
+            }
+        }
+        gameState.players.splice(idx, 1);
+        if (gameState.currentTurnIndex >= gameState.players.length)
+            gameState.currentTurnIndex = 0;
+    }
+    connections = connections.filter(c => c.peer !== peerId);
+    broadcastState();
+}
+
+function handleClientData(conn, payload) {
+    const player = gameState.players.find(p => p.id === conn.peer);
+
+    if (payload.type === 'JOIN') {
+        if (gameState.status !== 'lobby' || gameState.players.length >= gameState.maxPlayers) {
+            conn.send({ type:'ERROR', msg:'Room is full or game in progress.' });
+            return;
+        }
+        gameState.players.push(makePlayer(conn.peer, payload.name, false));
+        connections.push(conn);
+        broadcastState();
+        return;
+    }
+
+    if (!player) return;
+
+    if (payload.type === 'READY') {
+        player.ready = payload.isReady;
+        broadcastState();
+    }
+    if (payload.type === 'ACTION') {
+        const current = gameState.players[gameState.currentTurnIndex];
+        if (current && current.id === player.id)
+            processAction(player, payload.action, payload.amount);
+    }
+}
+
+// =========================================================================
+// CLIENT LOGIC
+// =========================================================================
+function joinGame() {
+    myName = document.getElementById('player-name').value.trim() || 'Player';
+    const code = document.getElementById('join-code').value.trim().toUpperCase();
+    if (!code) return;
+    document.getElementById('menu-error').innerText = 'Connecting...';
+
+    peer = new Peer();
+    peer.on('open', id => {
+        myId = id;
+        hostConnection = peer.connect(code);
+        hostConnection.on('open', () => hostConnection.send({ type:'JOIN', name:myName }));
+        hostConnection.on('data', data => {
+            if (data.type === 'STATE') {
+                gameState = data.state;
+                if (gameState.status === 'lobby') {
+                    document.getElementById('lobby-code-display').innerText = 'Connected to: ' + code;
+                    showView('lobby-view');
+                    renderLobby();
+                } else {
+                    showView('game-view');
+                    renderGame();
+                }
+            } else if (data.type === 'ERROR') {
+                alert(data.msg);
+                window.location.reload();
+            }
+        });
+        hostConnection.on('close', () => alert('Host disconnected. Please rejoin.'));
+    });
+    peer.on('error', () => {
+        document.getElementById('menu-error').innerText = 'Could not connect. Check the Room ID.';
+    });
+}
+
+function toggleReady() {
+    const p = gameState.players.find(x => x.id === myId);
+    if (!p) return;
+    p.ready = !p.ready;
+    if (isHost) broadcastState();
+    else hostConnection.send({ type:'READY', isReady: p.ready });
+}
+
+function sendAction(actionType, amount=0) {
+    amount = parseInt(amount) || 0;
+    if (isHost) {
+        const p = gameState.players.find(x => x.id === myId);
+        if (p) processAction(p, actionType, amount);
+    } else {
+        hostConnection.send({ type:'ACTION', action:actionType, amount });
+    }
+}
+
+// =========================================================================
+// CORE ENGINE  (host only)
+// =========================================================================
+function broadcastState() {
+    if (!isHost) return;
+    if (gameState.status === 'lobby') {
+        gameState.maxPlayers = parseInt(document.getElementById('max-players').value) || 8;
+    }
+    connections.forEach(conn => {
+        const safe = JSON.parse(JSON.stringify(gameState));
+        if (gameState.status !== 'showdown') {
+            safe.players.forEach(p => {
+                if (p.id !== conn.peer && p.cards.length > 0)
+                    p.cards = ['hidden','hidden'];
+            });
+        }
+        // Spectators never see anyone's hole cards (not even at showdown)
+        const connPlayer = safe.players.find(p => p.id === conn.peer);
+        if (connPlayer && connPlayer.isSpectator) {
+            safe.players.forEach(p => {
+                if (p.cards.length > 0) p.cards = ['hidden','hidden'];
+            });
+        }
+        conn.send({ type:'STATE', state:safe });
+    });
+    if (gameState.status === 'lobby') { showView('lobby-view'); renderLobby(); }
+    else                              { showView('game-view');  renderGame();  }
+}
+
+function startGame() {
+    if (!isHost) return;
+    gameState.status      = 'playing';
+    gameState.dealerIndex = 0;
+    startNewHand();
+}
+
+function buildDeck() {
+    deck = [];
+    for (const s of SUITS) for (const r of RANKS) deck.push(r + s);
+    for (let i = deck.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [deck[i], deck[j]] = [deck[j], deck[i]];
+    }
+}
+
+function startNewHand() {
+    // PERF: cancel any pending next-hand timer before we begin
+    if (handTimerId !== null) { clearTimeout(handTimerId); handTimerId = null; }
+
+    buildDeck();
+
+    // Mark players with 0 chips as spectators (keep them in the list so they watch)
+    gameState.players.forEach(p => {
+        if (p.chips <= 0) p.isSpectator = true;
+    });
+
+    // Remove connections for spectators who disconnected — but keep spectators who are still connected
+    // (connections list stays as-is; spectators just receive hidden-card state)
+
+    const activePlayers = gameState.players.filter(p => !p.isSpectator);
+    if (activePlayers.length < 2) {
+        gameState.lastMessage = 'Not enough players with chips to continue.';
+        gameState.status = 'lobby';
+        broadcastState();
+        return;
+    }
+
+    gameState.board      = [];
+    gameState.pot        = 0;
+    gameState.sidePots   = [];
+    gameState.stage      = 0;
+    gameState.turnsTaken = 0;
+    gameState.currentBet = gameState.bigBlind;
+    gameState.status     = 'playing';
+
+    gameState.players.forEach(p => {
+        p.folded          = p.isSpectator;
+        p.currentBet      = 0;
+        p.totalCommitted  = 0;
+        p.isAllIn         = false;
+        p.handName        = null;
+        p.isWinner        = false;
+        p.cards           = p.isSpectator ? [] : [deck.pop(), deck.pop()];
+    });
+
+    // Rotate dealer safely within active (non-spectator) players only
+    const n = gameState.players.length;
+    // Advance dealerIndex to an active player
+    let dSteps = 0;
+    do {
+        gameState.dealerIndex = (gameState.dealerIndex + 1) % n;
+        dSteps++;
+    } while (gameState.players[gameState.dealerIndex].isSpectator && dSteps < n);
+
+    // Post blinds — guard against -1
+    const sbIdx = nextActiveIndex(gameState.dealerIndex);
+    if (sbIdx === -1) { gameState.lastMessage = 'Setup error: no active players.'; broadcastState(); return; }
+    const bbIdx = nextActiveIndex(sbIdx);
+    if (bbIdx === -1) { gameState.lastMessage = 'Setup error: need at least 2 active players.'; broadcastState(); return; }
+
+    postBlind(sbIdx, gameState.smallBlind);
+    postBlind(bbIdx, gameState.bigBlind);
+
+    const firstAct = nextActiveIndex(bbIdx);
+    gameState.currentTurnIndex = (firstAct !== -1) ? firstAct : sbIdx;
+    gameState.lastMessage = 'Cards dealt. Blinds posted. Betting begins.';
+    broadcastState();
+}
+
+function postBlind(idx, amount) {
+    const p      = gameState.players[idx];
+    const actual = Math.min(amount, p.chips);
+    p.chips          -= actual;
+    p.currentBet      = actual;
+    p.totalCommitted += actual;
+    if (p.chips === 0) p.isAllIn = true;
+    computeSidePots();
+}
+
+function processAction(player, action, amount) {
+    const toCall = Math.max(0, gameState.currentBet - (player.currentBet || 0));
+
+    if (action === 'fold') {
+        player.folded = true;
+        gameState.lastMessage = `${player.name} folded.`;
+
+    } else if (action === 'call') {
+        const callAmt         = Math.min(toCall, player.chips);
+        player.chips         -= callAmt;
+        player.currentBet     = (player.currentBet || 0) + callAmt;
+        player.totalCommitted = (player.totalCommitted || 0) + callAmt;
+        if (player.chips === 0) player.isAllIn = true;
+        computeSidePots();
+        gameState.lastMessage = toCall === 0
+            ? `${player.name} checked.`
+            : `${player.name} called $${callAmt}.`;
+
+    } else if (action === 'raise') {
+        const minTotal    = gameState.currentBet + gameState.bigBlind;
+        const maxTotal    = (player.currentBet || 0) + player.chips;
+        const raiseTotal  = Math.min(Math.max(parseInt(amount) || 0, minTotal), maxTotal);
+        const added       = raiseTotal - (player.currentBet || 0);
+        player.chips     -= added;
+        player.currentBet = raiseTotal;
+        player.totalCommitted = (player.totalCommitted || 0) + added;
+        if (player.chips === 0) player.isAllIn = true;
+        gameState.currentBet = raiseTotal;
+        gameState.turnsTaken = 0;
+        computeSidePots();
+        gameState.lastMessage = player.isAllIn
+            ? `${player.name} is ALL-IN for $${raiseTotal}!`
+            : `${player.name} raised to $${raiseTotal}.`;
+    }
+
+    nextTurn();
+}
+
+function nextTurn() {
+    gameState.turnsTaken++;
+    const active = gameState.players.filter(p => !p.folded && !p.isSpectator);
+    const canAct = active.filter(p => !p.isAllIn);
+
+    // Only one player standing — they win uncontested
+    if (active.length <= 1) {
+        if (active.length === 1) {
+            active[0].chips   += gameState.pot;
+            active[0].isWinner = true;
+            gameState.pot      = 0;
+            gameState.sidePots = [];
+            gameState.lastMessage = `${active[0].name} wins (everyone else folded)!`;
+        }
+        broadcastState();
+        scheduleNewHand(5000);
+        return;
+    }
+
+    // All remaining actionable players have matched the bet — move to next street
+    const allMatched = canAct.length === 0
+        || (canAct.every(p => p.currentBet === gameState.currentBet)
+            && gameState.turnsTaken >= canAct.length);
+
+    if (allMatched) { advanceStage(); return; }
+
+    // Advance turn pointer (hard-capped — cannot spin)
+    const next = nextActiveIndex(gameState.currentTurnIndex);
+    if (next === -1) { advanceStage(); return; }
+    gameState.currentTurnIndex = next;
+    broadcastState();
+}
+
+function advanceStage() {
+    gameState.stage++;
+    gameState.turnsTaken = 0;
+    gameState.currentBet = 0;
+    // Reset per-street bet tracker; totalCommitted stays (accumulates whole hand)
+    gameState.players.forEach(p => { if (!p.folded && !p.isSpectator) p.currentBet = 0; });
+
+    if      (gameState.stage === 1) gameState.board.push(deck.pop(), deck.pop(), deck.pop());
+    else if (gameState.stage === 2) gameState.board.push(deck.pop());
+    else if (gameState.stage === 3) gameState.board.push(deck.pop());
+    else    { executeShowdown(); return; }
+
+    const first = nextActiveIndex(gameState.dealerIndex);
+    if (first === -1) { executeShowdown(); return; }
+    gameState.currentTurnIndex = first;
+    broadcastState();
+}
+
+function executeShowdown() {
+    gameState.status = 'showdown';
+    const allActive = gameState.players.filter(p => !p.folded && !p.isSpectator);
+
+    if (allActive.length === 0) { scheduleNewHand(4000); return; }
+
+    // Single player left — wins everything
+    if (allActive.length === 1) {
+        allActive[0].chips   += gameState.pot;
+        allActive[0].isWinner = true;
+        gameState.lastMessage = `${allActive[0].name} wins $${gameState.pot}!`;
+        gameState.pot = 0;
+        gameState.sidePots = [];
+        broadcastState();
+        scheduleNewHand(5000);
+        return;
+    }
+
+    // Score all active hands once
+    const scored = allActive.map(p => ({
+        player: p,
+        score:  evaluateHand(p.cards, gameState.board)
+    }));
+    scored.forEach(s => { s.player.handName = getHandName(s.score); });
+
+    const messages = [];
+
+    if (gameState.sidePots.length > 0) {
+        // --- Side-pot distribution ---
+        gameState.sidePots.forEach((pot, i) => {
+            if (pot.amount <= 0) return;
+
+            // Contestants for this pot = scored players whose id is in eligibleIds
+            const contestants = scored.filter(s => pot.eligibleIds.includes(s.player.id));
+            if (contestants.length === 0) return;
+
+            contestants.sort((a, b) => compareScore(b.score, a.score));
+            const best      = contestants[0].score;
+            const winners   = contestants.filter(s => compareScore(s.score, best) === 0);
+            const share     = Math.floor(pot.amount / winners.length);
+            const remainder = pot.amount % winners.length;
+
+            winners.forEach((w, wi) => {
+                w.player.chips   += share + (wi === 0 ? remainder : 0);
+                w.player.isWinner = true;
+            });
+
+            const potLabel = i === 0 ? 'Main Pot' : `Side Pot ${i}`;
+            const handName = getHandName(best);
+            if (winners.length === 1) {
+                messages.push(`${potLabel} ($${pot.amount}): ${winners[0].player.name} wins with ${handName}!`);
+            } else {
+                messages.push(`${potLabel} ($${pot.amount}): Split — ${winners.map(w=>w.player.name).join(' & ')} tie with ${handName}!`);
+            }
+        });
+
+        gameState.pot      = 0;
+        gameState.sidePots = [];
+
+    } else {
+        // --- Simple single-pot distribution (no all-ins created splits) ---
+        scored.sort((a, b) => compareScore(b.score, a.score));
+        const best    = scored[0].score;
+        const winners = scored.filter(s => compareScore(s.score, best) === 0);
+        const share   = Math.floor(gameState.pot / winners.length);
+        const rem     = gameState.pot % winners.length;
+
+        winners.forEach((w, wi) => {
+            w.player.chips   += share + (wi === 0 ? rem : 0);
+            w.player.isWinner = true;
+        });
+
+        const handName = getHandName(best);
+        if (winners.length === 1) {
+            messages.push(`SHOWDOWN! ${winners[0].player.name} wins $${gameState.pot} with ${handName}! 🏆`);
+        } else {
+            messages.push(`SPLIT POT! ${winners.map(w=>w.player.name).join(' & ')} tie with ${handName}!`);
+        }
+        gameState.pot = 0;
+    }
+
+    gameState.lastMessage = messages.join('  |  ');
+    broadcastState();
+    scheduleNewHand(6000);
+}
+
+// =========================================================================
+// RENDERERS
+// =========================================================================
+function renderLobby() {
+    const me = gameState.players.find(p => p.id === myId);
+    if (!me) return;
+    document.getElementById('btn-ready').innerText = me.ready ? 'Unready' : "I'm Ready";
+    document.getElementById('btn-ready').className = me.ready ? 'btn btn-danger' : 'btn btn-success';
+
+    let html = '', allReady = true;
+    gameState.players.forEach(p => {
+        if (!p.ready && !p.isSpectator) allReady = false;
+        let s;
+        if (p.isSpectator) {
+            s = '<span class="badge badge-spectator">SPECTATING</span>';
+        } else if (p.ready) {
+            s = '<span class="status-ready">READY</span>';
+        } else {
+            s = '<span class="status-waiting">WAITING</span>';
+        }
+        html += `<div class="lobby-player"><span>${p.name}</span>${s}</div>`;
+    });
+    document.getElementById('lobby-players').innerHTML = html;
+    if (isHost)
+        document.getElementById('btn-start').disabled =
+            !allReady || gameState.players.filter(p => !p.isSpectator).length < 2;
+}
+
+function renderGame() {
+    // Pot display — show main pot total, and individual side pots if any exist
+    document.getElementById('pot-display').innerText = `POT: $${gameState.pot}`;
+    const sidePotsEl = document.getElementById('side-pots-area');
+    if (gameState.sidePots && gameState.sidePots.length > 0) {
+        sidePotsEl.classList.remove('hidden');
+        sidePotsEl.innerHTML = gameState.sidePots.map((sp, i) => {
+            const label = i === 0 ? 'Main' : `Side ${i}`;
+            return `<span class="side-pot-badge">${label}: $${sp.amount}</span>`;
+        }).join('');
+    } else {
+        sidePotsEl.classList.add('hidden');
+        sidePotsEl.innerHTML = '';
+    }
+    document.getElementById('action-log').innerText  = gameState.lastMessage;
+
+    // Board cards
+    const newStart = gameState.stage===1 ? 0 : gameState.stage===2 ? 3 : gameState.stage===3 ? 4 : 99;
+    let boardHtml = '';
+    gameState.board.forEach((c, i) => {
+        const isNew = gameState.status === 'playing' && i >= newStart;
+        boardHtml += getCardHTML(c, false, isNew ? 'anim-deal' : '', isNew ? (i-newStart)*0.15 : 0);
+    });
+    for (let i = 0; i < 5 - gameState.board.length; i++) boardHtml += getCardHTML(null);
+    document.getElementById('board-area').innerHTML = boardHtml;
+
+    // Dealer / blind badge indices (only meaningful among active players)
+    const dealerIdx = gameState.dealerIndex;
+    const sbIdx     = nextActiveIndex(dealerIdx);
+    const bbIdx     = sbIdx !== -1 ? nextActiveIndex(sbIdx) : -1;
+
+    let oppHtml = '', heroHtml = '', myTurn = false;
+    const me = gameState.players.find(p => p.id === myId);
+    const iAmSpectator = me && me.isSpectator;
+
+    gameState.players.forEach((p, idx) => {
+        if (p.isSpectator) return; // spectators rendered separately below
+
+        const isActive = idx === gameState.currentTurnIndex
+                      && gameState.status === 'playing'
+                      && !p.folded && !p.isAllIn;
+        const pAnim = p.folded ? 'anim-fold'
+            : (gameState.stage === 0 && gameState.status === 'playing' ? 'anim-deal' : '');
+
+        let badges = '';
+        if (idx === dealerIdx)                      badges += `<span class="badge badge-dealer">D</span>`;
+        if (idx === sbIdx && gameState.stage === 0) badges += `<span class="badge badge-sb">SB</span>`;
+        if (idx === bbIdx && gameState.stage === 0) badges += `<span class="badge badge-bb">BB</span>`;
+        if (p.isAllIn)                              badges += `<span class="badge badge-allin">ALL-IN</span>`;
+
+        const betInfo = p.currentBet > 0 ? `<div class="bet-display">Bet: $${p.currentBet}</div>` : '';
+        const handLbl = p.handName ? `<div class="hand-rank-display">${p.handName}</div>` : '';
+        const winCls  = p.isWinner ? 'winner-glow' : '';
+
+        if (p.id === myId) {
+            if (isActive) myTurn = true;
+            const cardsHtml = p.cards.map((c, i) =>
+                getCardHTML(c, false, pAnim, pAnim==='anim-deal' ? idx*0.1+i*0.15 : 0)
+            ).join('');
+            heroHtml = `
+                <div class="player-tag ${isActive?'active-turn':''} ${winCls}">
+                    YOU${badges} • <span style="color:#ffd32a;">$${p.chips}</span>
+                </div>
+                <div class="card-row">${cardsHtml}</div>
+                ${betInfo}${handLbl}`;
+        } else {
+            // Hide hole cards from opponents unless showdown; spectators always get hidden
+            const hide = iAmSpectator || gameState.status !== 'showdown';
+            const cardsHtml = p.cards.map((c, i) =>
+                getCardHTML(c, hide || c==='hidden', pAnim, pAnim==='anim-deal' ? idx*0.1+i*0.15 : 0)
+            ).join('');
+            oppHtml += `
+                <div class="opponent ${isActive?'active-turn':''} ${p.folded?'folded-player':''} ${winCls}">
+                    <div class="player-tag">${p.name}${badges} • <span style="color:#ffd32a;">$${p.chips}</span></div>
+                    <div class="card-row" style="min-height:50px;">${cardsHtml}</div>
+                    ${betInfo}${handLbl}
+                </div>`;
+        }
+    });
+
+    document.getElementById('opponents-area').innerHTML = oppHtml;
+
+    // Hero area: spectating player gets a special banner instead of cards
+    if (iAmSpectator) {
+        heroHtml = `
+            <div class="player-tag spectator-player">
+                YOU <span class="badge badge-spectator">SPECTATING</span> • <span class="spectator-chips">$0</span>
+            </div>
+            <div class="spectator-banner">👁 You are spectating — watching the game but not playing.</div>`;
+    }
+    document.getElementById('hero-area').innerHTML = heroHtml;
+
+    // Spectator list (shown to everyone so active players know who's watching)
+    const spectators = gameState.players.filter(p => p.isSpectator);
+    const secEl = document.getElementById('spectator-section');
+    if (spectators.length > 0) {
+        secEl.classList.remove('hidden');
+        document.getElementById('spectator-list').innerHTML =
+            spectators.map(p =>
+                `<span style="color:#636e72; font-size:13px; margin-right:12px;">
+                    👁 ${p.name}${p.id === myId ? ' (you)' : ''}
+                </span>`
+            ).join('');
+    } else {
+        secEl.classList.add('hidden');
+    }
+
+    // Action controls
+    const ctrl = document.getElementById('game-controls');
+
+    if (iAmSpectator) {
+        ctrl.innerHTML = `<button class="btn btn-primary" disabled style="background:linear-gradient(to bottom,#636e72,#535c68);">👁 Spectating — waiting for next game</button>`;
+    } else if (gameState.status === 'showdown') {
+        ctrl.innerHTML = `<button class="btn btn-primary" disabled>Next hand starting soon…</button>`;
+    } else if (myTurn && me && !me.folded && !me.isAllIn) {
+        const myChips   = me.chips;
+        const toCall    = Math.max(0, gameState.currentBet - (me.currentBet || 0));
+        const callLabel = toCall === 0 ? 'Check' : `Call $${Math.min(toCall, myChips)}`;
+        const minRaise  = gameState.currentBet + gameState.bigBlind;
+        const maxRaise  = (me.currentBet || 0) + myChips;
+        const defRaise  = Math.min(minRaise, maxRaise);
+
+        ctrl.innerHTML = `
+            <button class="btn btn-danger"  onclick="sendAction('fold')">Fold</button>
+            <button class="btn btn-primary" onclick="sendAction('call')">${callLabel}</button>
+            <div class="raise-controls">
+                <input type="range" id="raise-slider"
+                    min="${defRaise}" max="${maxRaise}" value="${defRaise}" step="${gameState.bigBlind}"
+                    oninput="document.getElementById('raise-val').value=this.value">
+                <input type="number" id="raise-val" value="${defRaise}"
+                    min="${defRaise}" max="${maxRaise}" class="input-box"
+                    style="width:75px;padding:8px;margin:0 4px;font-size:15px;"
+                    oninput="document.getElementById('raise-slider').value=this.value">
+                <button class="btn btn-success"
+                    onclick="sendAction('raise',document.getElementById('raise-val').value)">Raise</button>
+                <button class="btn btn-warn"
+                    onclick="sendAction('raise',${maxRaise})">All-In $${maxRaise}</button>
+            </div>`;
+    } else if (me && me.isAllIn) {
+        ctrl.innerHTML = `<button class="btn btn-warn" disabled>ALL-IN — awaiting showdown…</button>`;
+    } else {
+        ctrl.innerHTML = `<button class="btn btn-primary" disabled>Waiting for your turn…</button>`;
+    }
+}
+</script>
+</body>
+</html>
