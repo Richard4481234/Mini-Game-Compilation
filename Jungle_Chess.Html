@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jungle Chess - P2P Multiplayer</title>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        body { background-color: #cbd5e1; margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; font-family: 'Segoe UI', system-ui, sans-serif; }
+        .game-container { display: flex; gap: 25px; background: #f8fafc; padding: 25px; border-radius: 16px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); align-items: flex-start;}
+        
+        /* Board Styles */
+        .board-wrapper { display: flex; flex-direction: column; gap: 5px; perspective: 1000px; }
+        #board { display: grid; grid-template-columns: repeat(7, 55px); grid-template-rows: repeat(9, 55px); gap: 3px; background: #334155; border: 6px solid #334155; border-radius: 8px; box-shadow: inset 0 0 10px rgba(0,0,0,0.5); }
+        .cell { display: flex; justify-content: center; align-items: center; position: relative; cursor: pointer; transition: filter 0.2s; }
+        .cell:hover { filter: brightness(1.05); }
+        .land { background: #e2cda3; } .water { background: #93c5fd; } .trap { background: #d6bc97; } .den { background: #fbbf24; }
+        
+        /* Piece Styles */
+        .piece { width: 44px; height: 44px; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-size: 24px; box-shadow: 0 4px 8px rgba(0,0,0,0.3); z-index: 2; transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1); user-select: none; }
+        .piece.p0 { background: linear-gradient(135deg, #fca5a5, #ef4444); border: 2px solid #b91c1c; }
+        .piece.p1 { background: linear-gradient(135deg, #93c5fd, #3b82f6); border: 2px solid #1d4ed8; }
+        .cell:hover .piece { transform: scale(1.08) translateY(-2px); box-shadow: 0 6px 12px rgba(0,0,0,0.4); }
+        .selected .piece { transform: scale(1.15) translateY(-4px); box-shadow: 0 0 0 4px #10b981, 0 8px 16px rgba(0,0,0,0.4); }
+        .valid-dot { width: 16px; height: 16px; background: #10b981; border-radius: 50%; position: absolute; z-index: 1; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+        .capture-target::after { content: ''; position: absolute; inset: 2px; border: 4px solid #ef4444; border-radius: 50%; z-index: 3; pointer-events: none; opacity: 0.8;}
+        
+        /* Battle Animations */
+        .shake-board { animation: shake-anim 0.35s cubic-bezier(.36,.07,.19,.97) both; }
+        @keyframes shake-anim { 10%, 90% { transform: translate3d(-2px, 0, 0); } 20%, 80% { transform: translate3d(4px, 0, 0); } 30%, 50%, 70% { transform: translate3d(-8px, 0, 0); } 40%, 60% { transform: translate3d(8px, 0, 0); } }
+        .explosion { position: absolute; font-size: 50px; z-index: 10; pointer-events: none; animation: explode-anim 0.6s cubic-bezier(0.165, 0.84, 0.44, 1) forwards; filter: drop-shadow(0 0 10px #ef4444); }
+        @keyframes explode-anim { 0% { transform: scale(0.2) rotate(-15deg); opacity: 1; filter: brightness(1.5); } 50% { transform: scale(1.8) rotate(10deg); opacity: 1; } 100% { transform: scale(2.5) rotate(20deg); opacity: 0; } }
+        .attacking { animation: attack-anim 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; z-index: 5; }
+        @keyframes attack-anim { 0% { transform: scale(1.8) translateY(-25px); filter: brightness(1.5) drop-shadow(0 15px 15px red); } 100% { transform: scale(1) translateY(0); filter: brightness(1) drop-shadow(0 4px 8px rgba(0,0,0,0.3)); } }
+
+        /* Sidebar UI */
+        .sidebar { width: 280px; display: flex; flex-direction: column; gap: 12px; }
+        
+        .network-panel { background: white; padding: 15px; border-radius: 12px; border: 1px solid #e2e8f0; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.02); transition: opacity 0.3s; }
+        .id-highlight { color: #10b981; font-family: monospace; font-size: 1.2em; font-weight: bold; cursor: copy; margin: 5px 0; user-select: all; }
+        .connect-input { padding: 8px; width: 85%; border-radius: 6px; border: 1px solid #cbd5e1; text-align: center; margin-bottom: 10px; font-family: monospace;}
+        .btn-connect { padding: 8px 16px; background: #3b82f6; color: white; border: none; border-radius: 6px; cursor: pointer; width: 100%; font-weight: 600; transition: background 0.2s;}
+        .btn-connect:hover { background: #2563eb; }
+        
+        .status-box { background: white; padding: 15px; border-radius: 12px; border: 1px solid #e2e8f0; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
+        .role-badge { display: inline-block; padding: 4px 8px; border-radius: 6px; font-weight: bold; font-size: 0.8rem; margin-bottom: 5px; color: white;}
+        
+        .log-box { display: flex; flex-direction: column; flex: 1; background: white; border-radius: 12px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
+        #log { flex: 1; padding: 12px; overflow-y: auto; height: 150px; font-size: 0.95rem; color: #334155; line-height: 1.5; }
+        #log::-webkit-scrollbar { width: 6px; } #log::-webkit-scrollbar-track { background: transparent; } #log::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        
+        .btn-restart { padding: 12px; background: #ef4444; color: white; border: none; border-radius: 10px; cursor: pointer; font-weight: 600; font-size: 1rem; transition: background 0.2s; }
+        .btn-restart:hover { background: #dc2626; }
+    </style>
+</head>
+<body>
+
+    <div class="game-container">
+        <div class="board-wrapper">
+            <div id="board"></div>
+        </div>
+
+        <div class="sidebar">
+            
+            <div class="network-panel" id="network-panel">
+                <div style="font-size: 0.85rem; color: #64748b; font-weight: 600;">YOUR ROOM ID</div>
+                <div id="my-id" class="id-highlight">Connecting...</div>
+                <hr style="border-top: 1px dashed #e2e8f0; margin: 12px 0;">
+                <div style="font-size: 0.85rem; color: #64748b; font-weight: 600; margin-bottom: 8px;">JOIN A FRIEND</div>
+                <input type="text" id="friend-id" class="connect-input" placeholder="Paste ID here">
+                <button class="btn-connect" onclick="connectToPeer()">Connect & Play</button>
+                <div id="connection-status" style="font-size: 0.8rem; color: #f59e0b; margin-top: 8px; font-weight: bold;">Playing Locally</div>
+            </div>
+
+            <div class="status-box">
+                <div id="my-role" class="role-badge" style="background: #64748b;">Local Match</div>
+                <h2 id="status" style="margin: 0; font-size: 1.4rem; color: #2563eb;">Blue's Turn</h2>
+                <div id="sub-status" style="margin-top: 5px; font-size: 0.9rem; color: #64748b;">Select a piece to move</div>
+            </div>
+            
+            <div class="log-box">
+                <div style="background: #f1f5f9; padding: 10px; font-weight: 600; color: #475569; border-bottom: 1px solid #e2e8f0; text-align: center;">Move History</div>
+                <div id="log"></div>
+            </div>
+
+            <button class="btn-restart" onclick="requestRestart()">Reset Board</button>
+        </div>
+    </div>
+
+    <script>
+        // --- GAME CONSTANTS ---
+        const symbols = { 'R': '🐭', 'C': '🐱', 'D': '🐶', 'W': '🐺', 'P': '🐆', 'T': '🐅', 'L': '🦁', 'E': '🐘' };
+        const ranks = { 'R': 1, 'C': 2, 'D': 3, 'W': 4, 'P': 5, 'T': 6, 'L': 7, 'E': 8 };
+        const water = new Set(['3,1','3,2','3,4','3,5','4,1','4,2','4,4','4,5','5,1','5,2','5,4','5,5']);
+        const traps = new Set(['0,2','0,4','1,3','8,2','8,4','7,3']);
+        const dens = { '0,3': 0, '8,3': 1 };
+
+        // --- STATE VARIABLES ---
+        let board, currentPlayer, selected, gameLog, moveCount, gameOver;
+        
+        // --- NETWORK VARIABLES ---
+        let peer = null;
+        let conn = null;
+        let myRole = null; // null = Local, 1 = Host(Blue), 0 = Guest(Red)
+
+        // --- NETWORK LOGIC (PeerJS) ---
+        function initNetwork() {
+            peer = new Peer(); 
+            
+            peer.on('open', (id) => {
+                document.getElementById('my-id').innerText = id;
+            });
+
+            // Handle incoming connection (We are the Host)
+            peer.on('connection', (connection) => {
+                conn = connection;
+                setupConnection();
+                startGame(1); // Host plays as Blue (Bottom)
+                conn.send({ type: 'start', role: 0 }); // Tell guest they are Red (Top)
+            });
+        }
+
+        function connectToPeer() {
+            const friendId = document.getElementById('friend-id').value.trim();
+            if (!friendId) return;
+            
+            document.getElementById('connection-status').innerText = "Connecting...";
+            document.getElementById('connection-status').style.color = "#3b82f6";
+            conn = peer.connect(friendId);
+            setupConnection();
+        }
+
+        function setupConnection() {
+            conn.on('open', () => {
+                document.getElementById('connection-status').innerText = "Connected to Opponent!";
+                document.getElementById('connection-status').style.color = "#10b981";
+                document.getElementById('network-panel').style.opacity = '0.5';
+                document.getElementById('network-panel').style.pointerEvents = 'none';
+            });
+
+            conn.on('data', (data) => {
+                if (data.type === 'start') {
+                    startGame(data.role);
+                } else if (data.type === 'move') {
+                    executeMove(data.from, data.to, false); // false = don't bounce back to network
+                } else if (data.type === 'reset') {
+                    initGame();
+                    render();
+                }
+            });
+
+            conn.on('close', () => {
+                alert("Opponent disconnected.");
+                location.reload();
+            });
+        }
+
+        function startGame(role) {
+            myRole = role;
+            let badge = document.getElementById('my-role');
+            if (role === 1) { 
+                badge.innerText = "You are BLUE"; badge.style.background = "#2563eb"; 
+            } else { 
+                badge.innerText = "You are RED"; badge.style.background = "#dc2626"; 
+            }
+            initGame();
+            render();
+        }
+
+        // --- CORE GAME LOGIC ---
+        function initGame() {
+            board = Array(9).fill().map(()=>Array(7).fill(null));
+            const starts = {
+                'L': [[0,0], [8,6]], 'T': [[0,6], [8,0]], 'D': [[1,1], [7,5]], 'C': [[1,5], [7,1]],
+                'R': [[2,0], [6,6]], 'P': [[2,2], [6,4]], 'W': [[2,4], [6,2]], 'E': [[2,6], [6,0]]
+            };
+            for (let [name, pos] of Object.entries(starts)) {
+                board[pos[0][0]][pos[0][1]] = { name, rank: ranks[name], player: 0 };
+                board[pos[1][0]][pos[1][1]] = { name, rank: ranks[name], player: 1 };
+            }
+            currentPlayer = 1;
+            selected = null;
+            gameLog = [];
+            moveCount = 1;
+            gameOver = false;
+        }
+
+        function requestRestart() {
+            initGame();
+            render();
+            // If connected, tell the other player to reset too
+            if (conn && conn.open) {
+                conn.send({ type: 'reset' });
+            }
+        }
+
+        function getValidMoves(r, c) {
+            let moves = [];
+            for (let i = 0; i < 9; i++) {
+                for (let j = 0; j < 7; j++) {
+                    if (isValid(r, c, i, j)) moves.push(`${i},${j}`);
+                }
+            }
+            return moves;
+        }
+
+        function isValid(r1, c1, r2, c2) {
+            let p = board[r1][c1];
+            let t = board[r2][c2];
+            if (!p || p.player !== currentPlayer) return false;
+            if (t && t.player === p.player) return false;
+            if (dens[`${r2},${c2}`] === p.player) return false;
+
+            let dr = Math.abs(r2-r1), dc = Math.abs(c2-c1);
+            if (dr+dc !== 1) {
+                if (['L','T'].includes(p.name)) {
+                    if (r1===r2) {
+                        let min=Math.min(c1,c2), max=Math.max(c1,c2);
+                        for(let c=min+1; c<max; c++) {
+                            if (!water.has(`${r1},${c}`)) return false;
+                            if (board[r1][c]) return false;
+                        }
+                        if (min+1 === max) return false;
+                    } else if (c1===c2) {
+                        let min=Math.min(r1,r2), max=Math.max(r1,r2);
+                        for(let r=min+1; r<max; r++) {
+                            if (!water.has(`${r},${c1}`)) return false;
+                            if (board[r][c1]) return false;
+                        }
+                        if (min+1 === max) return false;
+                    } else return false;
+                } else return false;
+            }
+
+            if (water.has(`${r2},${c2}`) && p.name !== 'R') return false;
+
+            if (t) {
+                if (water.has(`${r1},${c1}`) && !water.has(`${r2},${c2}`)) return false;
+                let tr = t.rank;
+                if (traps.has(`${r2},${c2}`)) {
+                    let owner = r2 < 4 ? 0 : 1;
+                    if (t.player !== owner) tr = 0;
+                }
+                if (p.name === 'R' && t.name === 'E') return true;
+                if (p.name === 'E' && t.name === 'R') return false;
+                if (p.rank < tr) return false;
+            }
+            return true;
+        }
+
+        function triggerBoardShake() {
+            let boardEl = document.getElementById('board');
+            boardEl.classList.remove('shake-board');
+            void boardEl.offsetWidth; 
+            boardEl.classList.add('shake-board');
+        }
+
+        function handleClick(r, c) {
+            if (gameOver) return;
+            
+            // Network check: Prevent move if it's an online game and not your turn
+            if (myRole !== null && currentPlayer !== myRole) return;
+
+            let p = board[r][c];
+            if (!selected) {
+                if (p && p.player === currentPlayer) {
+                    selected = {r, c};
+                    render();
+                }
+            } else {
+                if (selected.r === r && selected.c === c) {
+                    selected = null; 
+                    render();
+                } else if (isValid(selected.r, selected.c, r, c)) {
+                    let start = { r: selected.r, c: selected.c };
+                    let end = { r: r, c: c };
+                    
+                    executeMove(start, end, true); // true = emit to network
+                } else if (p && p.player === currentPlayer) {
+                    selected = {r, c}; 
+                    render();
+                }
+            }
+        }
+
+        function executeMove(start, end, sendToNetwork) {
+            let sp = board[start.r][start.c];
+            let tp = board[end.r][end.c];
+            let isCapture = tp !== null;
+
+            // Send to peer if required
+            if (sendToNetwork && conn && conn.open) {
+                conn.send({ type: 'move', from: start, to: end });
+            }
+            
+            // Logging
+            let cols = ['A','B','C','D','E','F','G'];
+            let cStr = cols[start.c] + (9-start.r);
+            let tStr = cols[end.c] + (9-end.r);
+            let msg = `<b>${moveCount}.</b> <span style="color:${sp.player===1?'#2563eb':'#dc2626'}">${symbols[sp.name]} ${cStr} &rarr; ${tStr}</span>`;
+            if (isCapture) msg += ` <br><span style="font-size:0.85em; color:#ef4444;">(💥 Captures ${symbols[tp.name]})</span>`;
+            gameLog.unshift(msg);
+            moveCount++;
+
+            // Update Board
+            board[end.r][end.c] = sp;
+            board[start.r][start.c] = null;
+            selected = null;
+            
+            if (isCapture) triggerBoardShake();
+            
+            // Win Condition
+            if (dens[`${end.r},${end.c}`] === 1 - currentPlayer) {
+                gameOver = true;
+                let color = sp.player === 1 ? "Blue" : "Red";
+                render();
+                document.getElementById('status').innerText = `🏆 ${color} Wins!`;
+                document.getElementById('status').style.color = '#10b981';
+                document.getElementById('sub-status').innerText = "Game Over";
+                return;
+            }
+            
+            currentPlayer = 1 - currentPlayer;
+            render(isCapture ? end : null);
+        }
+
+        // --- RENDERING ---
+        function render(captureTarget = null) {
+            let html = '';
+            
+            // Only show valid moves if playing locally OR if it's your turn online
+            let showHints = selected && (myRole === null || currentPlayer === myRole);
+            let validMoves = showHints ? getValidMoves(selected.r, selected.c) : [];
+            
+            for (let r = 0; r < 9; r++) {
+                for (let c = 0; c < 7; c++) {
+                    let isWater = water.has(`${r},${c}`);
+                    let isTrap = traps.has(`${r},${c}`);
+                    let isDen = dens[`${r},${c}`] !== undefined;
+                    let bg = isWater ? 'water' : isTrap ? 'trap' : isDen ? 'den' : 'land';
+                    
+                    let p = board[r][c];
+                    let isSel = selected && selected.r === r && selected.c === c;
+                    let isVal = validMoves.includes(`${r},${c}`);
+                    
+                    let cellClasses = `cell ${bg} ${isSel ? 'selected' : ''} ${isVal && p ? 'capture-target' : ''}`;
+                    
+                    html += `<div class="${cellClasses}" onclick="handleClick(${r},${c})">`;
+                    
+                    if (isVal && !p) html += `<div class="valid-dot"></div>`;
+                    if (isTrap && !p) html += `<div style="opacity:0.25; font-size: 28px;">🕳️</div>`;
+                    if (isDen && !p) html += `<div style="opacity:0.4; font-size: 28px;">🏠</div>`;
+                    
+                    if (captureTarget && captureTarget.r === r && captureTarget.c === c) {
+                        html += `<div class="explosion">💥</div>`;
+                    }
+
+                    if (p) {
+                        let isAttacking = captureTarget && captureTarget.r === r && captureTarget.c === c;
+                        html += `<div class="piece p${p.player} ${isAttacking ? 'attacking' : ''}">${symbols[p.name]}</div>`;
+                    }
+                    
+                    html += `</div>`;
+                }
+            }
+            document.getElementById('board').innerHTML = html;
+            
+            if (!gameOver) {
+                let pColor = currentPlayer === 1 ? '#2563eb' : '#dc2626';
+                document.getElementById('status').innerText = `${currentPlayer === 1 ? 'Blue' : 'Red'}'s Turn`;
+                document.getElementById('status').style.color = pColor;
+                
+                if (myRole === null) {
+                    document.getElementById('sub-status').innerText = selected ? "Click destination" : "Select a piece to move";
+                } else if (currentPlayer === myRole) {
+                    document.getElementById('sub-status').innerText = selected ? "Click destination" : "Your turn to move";
+                } else {
+                    document.getElementById('sub-status').innerText = "Waiting for opponent...";
+                }
+            }
+            
+            document.getElementById('log').innerHTML = gameLog.join('<hr style="margin:8px 0; border:0; border-top: 1px dashed #e2e8f0;">');
+        }
+
+        // Start everything
+        initGame();
+        render();
+        initNetwork();
+    </script>
+</body>
+</html>
